@@ -23,6 +23,7 @@ class User(TimestampMixin, Base):
     vpn_user_id: Mapped[str | None] = mapped_column(String(255))
     vpn_subscription_url: Mapped[str | None] = mapped_column(Text)
     bonus_days: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    device_limit: Mapped[int] = mapped_column(Integer, default=4, server_default="4", nullable=False)
     is_disabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
     referrer: Mapped["User | None"] = relationship(remote_side="User.id", foreign_keys=[referrer_id])

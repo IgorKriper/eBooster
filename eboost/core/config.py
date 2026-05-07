@@ -5,12 +5,20 @@ from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from eboost.core.branding import (
+    BOT_LONG_DESCRIPTION,
+    BOT_SHORT_DESCRIPTION,
+    SUPPORT_USERNAME_DEFAULT,
+    WELCOME_LOGO_PATH,
+)
+
 
 class Settings(BaseSettings):
     bot_token: str = "change-me"
     telegram_proxy: str = ""
     database_url: str = "postgresql+asyncpg://eboost:eboost@db:5432/eboost"
     backend_public_url: str = "http://localhost:8000"
+    connect_public_url: str = ""
 
     payment_provider: str = "mock"
     vpn_provider: str = "mock"
@@ -37,8 +45,21 @@ class Settings(BaseSettings):
     ref_trial_bonus_days: int = 1
     ref_payment_bonus_days: int = 7
 
-    support_username: str = "@eBoost_support"
+    support_username: str = SUPPORT_USERNAME_DEFAULT
     admin_ids: str = ""
+
+    welcome_logo_path: str = str(WELCOME_LOGO_PATH)
+    bot_short_description: str = BOT_SHORT_DESCRIPTION
+    bot_long_description: str = BOT_LONG_DESCRIPTION
+    auto_set_bot_descriptions: bool = True
+
+    happ_ios_url: str = "https://apps.apple.com/app/happ-proxy-utility/id6504287215"
+    happ_android_url: str = "https://play.google.com/store/apps/details?id=com.happproxy"
+    happ_macos_url: str = "https://apps.apple.com/app/happ-proxy-utility/id6504287215"
+    happ_windows_url: str = "https://github.com/Happ-proxy/happ-desktop/releases/latest"
+
+    default_device_limit: int = 4
+    connect_token_ttl_minutes: int = 30
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
@@ -50,6 +71,10 @@ class Settings(BaseSettings):
             if value:
                 ids.add(int(value))
         return ids
+
+    @property
+    def effective_connect_public_url(self) -> str:
+        return (self.connect_public_url or self.backend_public_url).rstrip("/")
 
 
 @lru_cache

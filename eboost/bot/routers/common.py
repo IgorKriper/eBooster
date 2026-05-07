@@ -1,20 +1,44 @@
 from __future__ import annotations
 
+import logging
+from pathlib import Path
+
 from aiogram import F, Router
 from aiogram.filters import CommandObject, CommandStart
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, FSInputFile, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from eboost.bot import keyboards
-from eboost.bot.formatters import format_date, user_status
+from eboost.bot.formatters import (
+    format_date,
+    format_subscription_panel,
+    user_status,
+)
 from eboost.bot.states import AccessFlow
+from eboost.core.branding import (
+    BRAND_NAME,
+    WELCOME_MESSAGE,
+    WELCOME_MESSAGE_EXPIRED,
+)
 from eboost.core.config import Settings, get_settings
 from eboost.models.payment import PaymentStatus
-from eboost.services import documents, payments, plans, promo_codes, referrals, trials, users
+from eboost.models.plan import PLAN_KIND_DEVICE_PACK, PLAN_KIND_SUBSCRIPTION
+from eboost.services import (
+    connect_tokens,
+    documents,
+    payments,
+    plans,
+    promo_codes,
+    referrals,
+    trials,
+    users,
+)
 from eboost.services.payment.factory import get_payment_provider
 from eboost.services.subscriptions import is_subscription_active
 from eboost.services.vpn.factory import get_vpn_provider
+
+logger = logging.getLogger(__name__)
 
 router = Router()
 
@@ -29,31 +53,92 @@ async def ensure_user(message_or_callback: Message | CallbackQuery, session: Asy
     )
 
 
-async def render_main(target: Message | CallbackQuery, text: str | None = None) -> None:
-    body = text or "eBoost помогает подключиться к быстрому и стабильному интернету в пару нажатий."
+def _build_connect_url(token: str, settings: Settings) -> str:
+    base = (settings.effective_connect_public_url or "").rstrip("/")
+    if not base:
+        return f"/connect?token={token}"
+    return f"{base}/connect?token={token}"
+
+
+async def _connect_url_for(
+    session: AsyncSession,
+    *,
+    user,
+    settings: Settings,
+) -> str | None:
+    if not user.vpn_subscription_url:
+        return None
+    token = await connect_tokens.issue_connect_token(session, user=user, settings=settings)
+    return _build_connect_url(token.token, settings)
+
+
+def _welcome_text_for(user) -> str:
+    if is_subscription_active(user):
+        return WELCOME_MESSAGE
+    if user.subscription_until is not None:
+        return WELCOME_MESSAGE_EXPIRED
+    return WELCOME_MESSAGE
+
+
+async def _send_welcome(message: Message, user) -> None:
+    settings = get_settings()
+    text = _welcome_text_for(user)
+    markup = keyboards.main_menu(user)
+    logo_path = Path(settings.welcome_logo_path) if settings.welcome_logo_path else None
+    if logo_path and logo_path.is_file():
+        try:
+            await message.answer_photo(
+                FSInputFile(str(logo_path)),
+                caption=text,
+                reply_markup=markup,
+            )
+            return
+        except Exception:
+            logger.exception("welcome_photo_failed path=%s", logo_path)
+    await message.answer(text, reply_markup=markup)
+
+
+async def render_main(
+    target: Message | CallbackQuery,
+    *,
+    user,
+    text: str | None = None,
+) -> None:
+    body = text or _welcome_text_for(user)
+    markup = keyboards.main_menu(user)
     if isinstance(target, Message):
-        await target.answer(body, reply_markup=keyboards.main_menu())
-    else:
-        await target.message.edit_text(body, reply_markup=keyboards.main_menu())
-        await target.answer()
+        await target.answer(body, reply_markup=markup)
+        return
+    try:
+        await target.message.edit_text(body, reply_markup=markup)
+    except Exception:
+        await target.message.answer(body, reply_markup=markup)
+    await target.answer()
 
 
 @router.message(CommandStart())
-async def start(message: Message, command: CommandObject, session: AsyncSession) -> None:
-    await users.get_or_create_user(
+async def start(
+    message: Message,
+    command: CommandObject,
+    session: AsyncSession,
+    state: FSMContext,
+) -> None:
+    await state.clear()
+    user = await users.get_or_create_user(
         session,
         telegram_id=message.from_user.id,
         username=message.from_user.username,
         first_name=message.from_user.first_name,
         start_payload=command.args,
     )
-    await render_main(message)
+    await _send_welcome(message, user)
 
 
 @router.callback_query(F.data == "main")
-async def main_callback(callback: CallbackQuery, state: FSMContext) -> None:
+async def main_callback(callback: CallbackQuery, session: AsyncSession, state: FSMContext) -> None:
     await state.clear()
-    await render_main(callback)
+    user = await ensure_user(callback, session)
+    await render_main(callback, user=user)
 
 
 @router.callback_query(F.data == "trial")
@@ -61,18 +146,27 @@ async def trial_callback(callback: CallbackQuery, session: AsyncSession) -> None
     settings = get_settings()
     vpn_provider = get_vpn_provider(settings)
     user = await ensure_user(callback, session)
-    activated, message = await trials.activate_trial(session, user=user, settings=settings, vpn_provider=vpn_provider)
+    activated, message = await trials.activate_trial(
+        session, user=user, settings=settings, vpn_provider=vpn_provider
+    )
     if activated:
+        connect_url = await _connect_url_for(session, user=user, settings=settings)
         text = (
-            f"{message}\n\n"
-            "Выбери устройство или нажми кнопку подключения.\n\n"
-            f"Ссылка для подключения:\n{user.vpn_subscription_url}"
+            f"✅ {message}\n\n"
+            f"{format_subscription_panel(user)}\n\n"
+            f"Жми «🚀 Открыть и подключить» — откроется бренд-страница {BRAND_NAME} "
+            "с инструкцией и кнопкой добавления подписки в Happ."
         )
-        await callback.message.edit_text(text, reply_markup=keyboards.connect_menu(user))
+        markup = (
+            keyboards.connect_open_menu(connect_url)
+            if connect_url
+            else keyboards.connect_unavailable_menu()
+        )
+        await callback.message.edit_text(text, reply_markup=markup)
     else:
         await callback.message.edit_text(
-            f"{message}\n\nДата окончания: {format_date(user)}",
-            reply_markup=keyboards.connect_menu(user) if user.vpn_subscription_url else keyboards.back_menu(),
+            f"{message}\n\nДоступ до: {format_date(user)}",
+            reply_markup=keyboards.main_menu(user),
         )
     await callback.answer()
 
@@ -81,7 +175,38 @@ async def trial_callback(callback: CallbackQuery, session: AsyncSession) -> None
 async def access_callback(callback: CallbackQuery, session: AsyncSession, state: FSMContext) -> None:
     await state.clear()
     active_plans = await plans.list_active_plans(session)
-    await callback.message.edit_text("Выбери срок доступа:", reply_markup=keyboards.plans_menu(active_plans))
+    await callback.message.edit_text(
+        f"Выбери срок доступа в {BRAND_NAME}:",
+        reply_markup=keyboards.plans_menu(active_plans),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "add_device")
+async def add_device_callback(callback: CallbackQuery, session: AsyncSession, state: FSMContext) -> None:
+    await state.clear()
+    user = await ensure_user(callback, session)
+    if not is_subscription_active(user):
+        await callback.answer(
+            "Сначала активируй подписку, потом сможешь добавить устройства.",
+            show_alert=True,
+        )
+        await callback.message.edit_text(
+            "Сначала активируй подписку — после этого появится возможность добавить устройства.",
+            reply_markup=keyboards.main_menu(user),
+        )
+        return
+    packs = await plans.list_active_device_packs(session)
+    if not packs:
+        await callback.answer("Доп. устройства временно недоступны", show_alert=True)
+        return
+    await callback.message.edit_text(
+        (
+            "➕ Добавить устройство\n\n"
+            f"Сейчас доступно {user.device_limit} устройств. Выбери пакет, чтобы расширить лимит:"
+        ),
+        reply_markup=keyboards.device_packs_menu(packs),
+    )
     await callback.answer()
 
 
@@ -93,10 +218,20 @@ async def plan_callback(callback: CallbackQuery, session: AsyncSession, state: F
         await callback.answer("Тариф не найден", show_alert=True)
         return
     await state.update_data(plan_id=plan.id, promo_code=None)
-    await callback.message.edit_text(
-        f"Ты выбрал тариф:\n\n{plan.title} - {plan.price_rub}₽\n\nУ тебя есть промокод?",
-        reply_markup=keyboards.promo_question_menu(),
-    )
+    if plan.kind == PLAN_KIND_DEVICE_PACK:
+        await callback.message.edit_text(
+            (
+                f"Пакет: {plan.title} — {plan.price_rub}₽\n"
+                f"Лимит увеличится на +{plan.bonus_devices} устройств.\n\n"
+                "У тебя есть промокод?"
+            ),
+            reply_markup=keyboards.promo_question_menu(),
+        )
+    else:
+        await callback.message.edit_text(
+            f"Ты выбрал тариф:\n\n{plan.title} — {plan.price_rub}₽\n\nУ тебя есть промокод?",
+            reply_markup=keyboards.promo_question_menu(),
+        )
     await callback.answer()
 
 
@@ -115,7 +250,7 @@ async def promo_code_message(message: Message, session: AsyncSession, state: FSM
     user = await ensure_user(message, session)
     if not plan:
         await state.clear()
-        await message.answer("Выбери тариф заново.", reply_markup=keyboards.main_menu())
+        await message.answer("Выбери тариф заново.", reply_markup=keyboards.main_menu(user))
         return
 
     validation = await promo_codes.validate_promo_code(session, user=user, code=message.text or "")
@@ -182,6 +317,37 @@ async def pay_with_promo(callback: CallbackQuery, session: AsyncSession, state: 
     await create_payment_from_state(callback, session, state, use_promo=True)
 
 
+async def _render_payment_success(
+    callback: CallbackQuery,
+    session: AsyncSession,
+    payment,
+) -> None:
+    settings = get_settings()
+    user = payment.user
+    connect_url = await _connect_url_for(session, user=user, settings=settings)
+    is_device_pack = payment.plan.kind == PLAN_KIND_DEVICE_PACK
+    if is_device_pack:
+        text = (
+            "✅ Дополнительные устройства добавлены\n\n"
+            f"📱 Устройства: 0 из {user.device_limit}\n"
+            f"⏳ Доступ до: {format_date(user)}"
+        )
+    else:
+        text = (
+            "✅ Оплата прошла успешно!\n\n"
+            f"Подписка {BRAND_NAME} активирована.\n\n"
+            f"{format_subscription_panel(user)}\n\n"
+            f"Жми «🚀 Открыть и подключить» — откроется бренд-страница {BRAND_NAME} "
+            "и подписка автоматически добавится в Happ."
+        )
+    markup = (
+        keyboards.connect_open_menu(connect_url)
+        if connect_url
+        else keyboards.connect_unavailable_menu()
+    )
+    await callback.message.edit_text(text, reply_markup=markup)
+
+
 @router.callback_query(F.data.startswith("mock_pay:"))
 async def mock_pay_callback(callback: CallbackQuery, session: AsyncSession) -> None:
     payment_id = int(callback.data.split(":", 1)[1])
@@ -198,12 +364,7 @@ async def mock_pay_callback(callback: CallbackQuery, session: AsyncSession) -> N
     except ValueError:
         await callback.answer("Платёж не найден", show_alert=True)
         return
-
-    await callback.message.edit_text(
-        "Оплата прошла. Доступ продлён.\n\n"
-        "Выбери устройство или нажми кнопку подключения.",
-        reply_markup=keyboards.connect_menu(payment.user),
-    )
+    await _render_payment_success(callback, session, payment)
     await callback.answer("Оплата прошла")
 
 
@@ -228,54 +389,36 @@ async def payment_check(callback: CallbackQuery, session: AsyncSession) -> None:
     if payment.status != PaymentStatus.SUCCEEDED:
         await callback.answer("Оплата пока не прошла", show_alert=True)
         return
-    await callback.message.edit_text(
-        "Оплата прошла. Доступ продлён.\n\nВыбери устройство или нажми кнопку подключения.",
-        reply_markup=keyboards.connect_menu(user),
-    )
-    await callback.answer()
-
-
-@router.callback_query(F.data == "mock_connect")
-async def mock_connect_callback(callback: CallbackQuery, session: AsyncSession) -> None:
-    user = await ensure_user(callback, session)
-    await callback.message.edit_text(
-        "Доступ готов.\n\n"
-        "В тестовом режиме здесь показывается ссылка. В боевом режиме кнопка будет открывать приложение для подключения.\n\n"
-        f"Ссылка для подключения:\n{user.vpn_subscription_url}",
-        reply_markup=keyboards.connect_menu(user),
-    )
+    await _render_payment_success(callback, session, payment)
     await callback.answer()
 
 
 @router.callback_query(F.data == "connect")
 async def connect_callback(callback: CallbackQuery, session: AsyncSession) -> None:
+    settings = get_settings()
     user = await ensure_user(callback, session)
     if not is_subscription_active(user) or not user.vpn_subscription_url:
-        await callback.message.edit_text("Сначала активируй пробный доступ или выбери тариф.", reply_markup=keyboards.main_menu())
-    else:
         await callback.message.edit_text(
-            "Выбери устройство или нажми кнопку подключения.\n\n"
-            f"Ссылка для подключения:\n{user.vpn_subscription_url}",
-            reply_markup=keyboards.connect_menu(user),
+            (
+                f"⏳ Подписка {BRAND_NAME} ещё не активна.\n\n"
+                "Активируй пробный период или выбери тариф."
+            ),
+            reply_markup=keyboards.connect_unavailable_menu(),
         )
-    await callback.answer()
-
-
-@router.callback_query(F.data.startswith("device:"))
-async def device_callback(callback: CallbackQuery, session: AsyncSession) -> None:
-    device = callback.data.split(":", 1)[1]
-    user = await ensure_user(callback, session)
-    names = {"iphone": "iPhone", "android": "Android", "windows": "Windows", "mac": "Mac"}
-    instruction = (
-        f"{names.get(device, 'устройство')}:\n\n"
-        "1. Установи приложение Happ.\n"
-        "2. Нажми «Подключить eBoost».\n"
-        "3. Разреши добавление доступа и включи подключение."
+        await callback.answer()
+        return
+    connect_url = await _connect_url_for(session, user=user, settings=settings)
+    if not connect_url:
+        await callback.answer(
+            "Подписка ещё готовится, попробуй через минуту", show_alert=True
+        )
+        return
+    text = (
+        f"{format_subscription_panel(user)}\n\n"
+        f"Жми «🚀 Открыть и подключить» — откроется бренд-страница {BRAND_NAME}, "
+        "подписка добавится в Happ автоматически."
     )
-    await callback.message.edit_text(
-        f"{instruction}\n\nСсылка для подключения:\n{user.vpn_subscription_url}",
-        reply_markup=keyboards.connect_menu(user),
-    )
+    await callback.message.edit_text(text, reply_markup=keyboards.connect_open_menu(connect_url))
     await callback.answer()
 
 
@@ -284,12 +427,13 @@ async def cabinet_callback(callback: CallbackQuery, session: AsyncSession) -> No
     user = await ensure_user(callback, session)
     referral_count = await referrals.count_referrals(session, user.id)
     text = (
-        "Кабинет\n\n"
+        "👤 Кабинет\n\n"
         f"Telegram ID: {user.telegram_id}\n"
         f"Статус: {user_status(user)}\n"
         f"Доступ до: {format_date(user)}\n"
-        f"Рефералы: {referral_count}\n"
-        f"Бонусные дни: {user.bonus_days}"
+        f"📱 Лимит устройств: {user.device_limit}\n"
+        f"👥 Рефералы: {referral_count}\n"
+        f"🎁 Бонусные дни: {user.bonus_days}"
     )
     await callback.message.edit_text(text, reply_markup=keyboards.cabinet_menu(user))
     await callback.answer()
@@ -326,8 +470,8 @@ async def payments_history_callback(callback: CallbackQuery, session: AsyncSessi
 @router.callback_query(F.data == "info")
 async def info_callback(callback: CallbackQuery) -> None:
     await callback.message.edit_text(
-        "eBoost - простой доступ к стабильному интернету без сложных настроек.\n\n"
-        "Здесь можно посмотреть документы, инструкции и поддержку.",
+        f"{BRAND_NAME} — простой и быстрый VPN-ускоритель без лишних настроек.\n\n"
+        "Здесь — документы, инструкции и поддержка.",
         reply_markup=keyboards.info_menu(),
     )
     await callback.answer()

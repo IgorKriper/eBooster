@@ -66,9 +66,11 @@ async def run() -> None:
             vpn_provider=vpn_provider,
         )
 
-        assert payment.final_amount == 1043
+        # 12-мес тариф 1900 ₽ × WELCOME30 (30% скидка) = 1330 ₽
+        assert payment.final_amount == 1330
         assert referred.vpn_subscription_url
         assert referred.subscription_until is not None
+        assert referred.device_limit == 4
         assert referrer.bonus_days == settings.ref_trial_bonus_days + settings.ref_payment_bonus_days
 
     await engine.dispose()

@@ -8,6 +8,7 @@ from eboost.core.config import Settings
 from eboost.core.time import utcnow
 from eboost.models import Payment, Plan, PromoCodeUsage, User
 from eboost.models.payment import PaymentStatus
+from eboost.models.plan import PLAN_KIND_DEVICE_PACK
 from eboost.models.referral import ReferralBonusType
 from eboost.services import promo_codes, referrals, subscriptions
 from eboost.services.payment.base import PaymentCreateRequest, PaymentProvider, PaymentWebhookResult
@@ -110,8 +111,15 @@ async def complete_payment(
 
     payment.status = PaymentStatus.SUCCEEDED
     payment.paid_at = utcnow()
-    subscriptions.extend_subscription(payment.user, payment.plan.duration_days)
-    await subscriptions.sync_vpn_access(payment.user, vpn_provider)
+    if payment.plan.kind == PLAN_KIND_DEVICE_PACK:
+        if payment.plan.bonus_devices > 0:
+            payment.user.device_limit = (payment.user.device_limit or 0) + payment.plan.bonus_devices
+        if payment.user.vpn_user_id:
+            await subscriptions.sync_vpn_access(payment.user, vpn_provider)
+    else:
+        if payment.plan.duration_days:
+            subscriptions.extend_subscription(payment.user, payment.plan.duration_days)
+        await subscriptions.sync_vpn_access(payment.user, vpn_provider)
 
     if payment.promo_code_id and payment.promo_code:
         payment.promo_code.used_count += 1
