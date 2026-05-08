@@ -4,6 +4,49 @@ INSTRUCTION_SELECT = "<b>📖 Инструкция</b>\n\nВыбери устр�
 
 CONNECT = "<b>Подключение eBooster</b>"
 
+
+# Платформенные карточки S11–S14: 4 коротких шага + 4 кнопки.
+DEVICE_TITLES: dict[str, str] = {
+    "iphone": "📱 iPhone / iPad",
+    "android": "🤖 Android",
+    "windows": "💻 Windows",
+    "mac": "🍏 Mac",
+}
+
+
+CARDS: dict[str, str] = {
+    "iphone": (
+        "<b>📱 iPhone / iPad — подключение</b>\n\n"
+        "1. Скачай <b>Happ</b> из App Store\n"
+        "2. Вернись сюда и нажми <b>«🚀 Открыть и подключить»</b>\n"
+        "3. Подтверди добавление профиля и разреши VPN в настройках iOS\n"
+        "4. Включи eBooster в Happ\n\n"
+        "Если не сработало — скопируй ссылку и добавь подключение в Happ вручную."
+    ),
+    "android": (
+        "<b>🤖 Android — подключение</b>\n\n"
+        "1. Скачай <b>Happ</b> из Google Play\n"
+        "2. Вернись сюда и нажми <b>«🚀 Открыть и подключить»</b>\n"
+        "3. Подтверди добавление подключения в Happ\n"
+        "4. Включи eBooster в приложении\n\n"
+        "Если не сработало — скопируй ссылку и добавь подключение в Happ вручную."
+    ),
+    "windows": (
+        "<b>💻 Windows — подключение</b>\n\n"
+        "1. Скачай и установи <b>Happ</b> для Windows\n"
+        "2. Скопируй ссылку кнопкой ниже\n"
+        "3. Открой Happ → добавь подключение → вставь ссылку\n"
+        "4. Включи eBooster в приложении"
+    ),
+    "mac": (
+        "<b>🍏 Mac — подключение</b>\n\n"
+        "1. Скачай и установи <b>Happ</b> для macOS\n"
+        "2. Скопируй ссылку кнопкой ниже\n"
+        "3. Открой Happ → добавь подключение → вставь ссылку\n"
+        "4. Включи eBooster в приложении"
+    ),
+}
+
 READY = (
     "<b>Ускорение включено</b>\n\n"
     "Работает в фоне\n"
@@ -77,4 +120,17 @@ def copy_link(url: str) -> str:
         "1. Скопируй ссылку\n"
         "2. Открой Happ\n"
         "3. Добавь подключение"
+    )
+
+
+def copy_link_message(url: str) -> str:
+    """Fallback when CopyTextButton can't fit the URL (256 byte Telegram limit).
+
+    Sent as a separate message so the user can long-press the <code>...</code>
+    block to copy.
+    """
+    return (
+        "<b>📋 Ссылка для подключения</b>\n\n"
+        f"<code>{url}</code>\n\n"
+        "Зажми ссылку, чтобы скопировать, и вставь в Happ → Добавить подключение."
     )

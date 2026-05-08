@@ -9,6 +9,11 @@ from eboost.db.base import Base
 PLAN_KIND_SUBSCRIPTION = "subscription"
 PLAN_KIND_DEVICE_PACK = "device_pack"
 
+TARIFF_SOLO = "solo"
+TARIFF_PLUS = "plus"
+TARIFF_FAMILY = "family"
+TARIFF_LEGACY_PLUS_5 = "legacy_plus_5"
+
 
 class Plan(Base):
     __tablename__ = "plans"
@@ -26,6 +31,13 @@ class Plan(Base):
         server_default=PLAN_KIND_SUBSCRIPTION,
     )
     bonus_devices: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    tariff_code: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, index=True
+    )
+    period_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    slot_limit: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"
     )
 

@@ -66,8 +66,12 @@ async def run() -> None:
             vpn_provider=vpn_provider,
         )
 
-        # 12-мес тариф 1900 ₽ × WELCOME30 (30% скидка) = 1330 ₽
-        assert payment.final_amount == 1330
+        # TZ Exec Summary: топовый активный тариф — Family 12m (5490 ₽);
+        # WELCOME30 (30%) → final = price - price*30//100.
+        expected_final = plan.price_rub - plan.price_rub * 30 // 100
+        assert payment.final_amount == expected_final
+        # Family даёт 10 устройств; никогда не понижаем (default_device_limit может быть выше).
+        assert referred.device_limit >= max(int(plan.slot_limit or 0), 0)
         assert referred.vpn_subscription_url
         assert referred.subscription_until is not None
         assert referrer.bonus_days == settings.ref_unpaid_bonus_cap_days

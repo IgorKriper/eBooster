@@ -38,6 +38,7 @@ from eboost.services import (
     users,
 )
 from eboost.services.payment.factory import get_payment_provider
+from eboost.services.plans import slot_limit_for_tariff, tariff_title
 from eboost.services.subscriptions import is_subscription_active
 from eboost.services.vpn.factory import get_vpn_provider
 
@@ -153,23 +154,50 @@ async def access_callback(callback: CallbackQuery, session: AsyncSession, state:
             reply_markup=keyboards.active_access_menu(),
         )
     else:
-        await show_plan_list(callback, session, back_to="main")
+        await show_tariff_list(callback, session, back_to="main")
     await callback.answer()
 
 
 @router.callback_query(F.data == "access_extend")
 async def access_extend_callback(callback: CallbackQuery, session: AsyncSession, state: FSMContext) -> None:
     await state.clear()
-    await show_plan_list(callback, session, back_to="access")
+    await show_tariff_list(callback, session, back_to="access")
     await callback.answer()
 
 
-async def show_plan_list(callback: CallbackQuery, session: AsyncSession, *, back_to: str) -> None:
-    active_plans = await plans.list_active_plans(session)
+async def show_tariff_list(callback: CallbackQuery, session: AsyncSession, *, back_to: str) -> None:
+    """Render the top-level tariff overview (Solo/Plus/Family) with `от Xр`."""
+    plan_rows = await plans.list_active_subscription_plans(session)
+    by_code: dict[str, list] = {}
+    for plan in plan_rows:
+        by_code.setdefault(plan.tariff_code or "", []).append(plan)
+    items: list[tuple[str, int, int]] = []
+    for code, code_plans in by_code.items():
+        if not code:
+            continue
+        slot = slot_limit_for_tariff(code) or int(code_plans[0].slot_limit or 0)
+        min_price = min(int(p.price_rub) for p in code_plans)
+        items.append((code, slot, min_price))
     await callback.message.edit_text(
         access_texts.plans(),
-        reply_markup=keyboards.plans_menu(active_plans, back_to=back_to),
+        reply_markup=keyboards.tariff_menu(items, back_to=back_to),
     )
+
+
+@router.callback_query(F.data.startswith("tariff:"))
+async def tariff_callback(callback: CallbackQuery, session: AsyncSession, state: FSMContext) -> None:
+    tariff_code = callback.data.split(":", 1)[1]
+    tariff_plans = await plans.list_plans_for_tariff(session, tariff_code)
+    if not tariff_plans:
+        await callback.answer("Тариф не найден", show_alert=True)
+        return
+    slot_limit = slot_limit_for_tariff(tariff_code) or int(tariff_plans[0].slot_limit or 0)
+    await state.update_data(tariff_code=tariff_code, plan_id=None, promo_code=None)
+    await callback.message.edit_text(
+        access_texts.selected_tariff(tariff_code, slot_limit),
+        reply_markup=keyboards.period_menu(tariff_plans, back_to="access"),
+    )
+    await callback.answer()
 
 
 @router.callback_query(F.data.startswith("plan:"))
@@ -180,10 +208,11 @@ async def plan_callback(callback: CallbackQuery, session: AsyncSession, state: F
         await callback.answer("Тариф не найден", show_alert=True)
         return
     await state.update_data(plan_id=plan.id, promo_code=None)
-    await callback.message.edit_text(
-        access_texts.selected_plan(plan.title, plan.price_rub, plan.duration_days),
-        reply_markup=keyboards.promo_question_menu(),
-    )
+    if plan.is_device_pack:
+        text = access_texts.selected_device_pack(plan)
+    else:
+        text = access_texts.selected_plan(plan)
+    await callback.message.edit_text(text, reply_markup=keyboards.promo_question_menu())
     await callback.answer()
 
 
@@ -449,6 +478,7 @@ async def connect_devices_callback(callback: CallbackQuery, session: AsyncSessio
 
 @router.callback_query(F.data == "device_pack")
 async def device_pack_callback(callback: CallbackQuery, session: AsyncSession, state: FSMContext) -> None:
+    """S07/S17: Solo-only device-pack add-ons (+1 / +2 / +3 устройства)."""
     await state.clear()
     user = await ensure_user(callback, session)
     if not is_subscription_active(user):
@@ -456,15 +486,28 @@ async def device_pack_callback(callback: CallbackQuery, session: AsyncSession, s
         await callback.answer()
         return
     packs = await plans.list_device_packs(session)
+    if not packs:
+        await callback.answer("Аддон сейчас недоступен", show_alert=True)
+        return
     await callback.message.edit_text(
-        access_texts.device_packs(user.device_limit),
-        reply_markup=keyboards.plans_menu(packs, back_to="main"),
+        access_texts.device_packs(int(user.device_limit or 0)),
+        reply_markup=keyboards.plans_menu(packs, back_to="cabinet"),
     )
     await callback.answer()
 
 
+def _download_url_for(device: str, settings) -> str:
+    return {
+        "iphone": settings.happ_ios_url,
+        "android": settings.happ_android_url,
+        "windows": settings.happ_windows_url,
+        "mac": settings.happ_macos_url,
+    }.get(device, settings.happ_ios_url)
+
+
 @router.callback_query(F.data.startswith("device:"))
 async def device_callback(callback: CallbackQuery, session: AsyncSession) -> None:
+    """S11–S14: единая платформенная карточка (4 шага + 4 кнопки)."""
     device = callback.data.split(":", 1)[1]
     user = await ensure_user(callback, session)
     if not is_subscription_active(user) or not user.vpn_subscription_url:
@@ -474,11 +517,16 @@ async def device_callback(callback: CallbackQuery, session: AsyncSession) -> Non
     if user.connected_at is None:
         user.connected_at = utcnow()
     settings = get_settings()
+    token = await connect_tokens.issue_connect_token(session, user=user, settings=settings)
+    open_url = happ.public_connect_url(settings, token.token)
+    text = connection_texts.CARDS.get(device, connection_texts.CONNECT)
     await callback.message.edit_text(
-        connection_texts.CONNECT,
-        reply_markup=keyboards.device_connection_menu(
+        text,
+        reply_markup=keyboards.device_card_menu(
             device=device,
-            open_url=happ.connect_url(settings, user.telegram_id),
+            open_url=open_url,
+            download_url=_download_url_for(device, settings),
+            subscription_url=user.vpn_subscription_url,
         ),
     )
     await callback.answer()
@@ -486,20 +534,21 @@ async def device_callback(callback: CallbackQuery, session: AsyncSession) -> Non
 
 @router.callback_query(F.data.startswith("copy_link:"))
 async def copy_link_callback(callback: CallbackQuery, session: AsyncSession) -> None:
+    """Fallback when vpn_subscription_url > 256 bytes (Telegram limit).
+
+    Sends the raw link as a separate <code>...</code> message so the user can
+    long-press to copy. Keeps the platform card intact.
+    """
     device = callback.data.split(":", 1)[1]
     user = await ensure_user(callback, session)
     if not user.vpn_subscription_url:
         await callback.answer("Ссылка пока недоступна", show_alert=True)
         return
-    await callback.message.edit_text(
-        connection_texts.copy_link(user.vpn_subscription_url),
-        reply_markup=keyboards.device_instruction_menu(
-            device=device,
-            url=user.vpn_subscription_url,
-            back_to=f"device:{device}",
-        ),
+    await callback.message.answer(
+        connection_texts.copy_link_message(user.vpn_subscription_url),
+        reply_markup=keyboards.back_menu(f"device:{device}"),
     )
-    await callback.answer()
+    await callback.answer("Ссылка отправлена")
 
 
 @router.callback_query(F.data.startswith("instruction:"))
@@ -526,13 +575,56 @@ async def cabinet_callback(callback: CallbackQuery, session: AsyncSession) -> No
     user = await ensure_user(callback, session)
     stats = await referrals.referral_stats(session, referrer_id=user.id, settings=get_settings())
     if is_subscription_active(user):
-        text = cabinet_texts.active(format_date(user), stats.invited_count, stats.bonus_days)
-        markup = keyboards.cabinet_menu()
+        plan_title = await _user_plan_title(session, user)
+        slot_limit = int(user.device_limit or 0)
+        used_slots = await _used_slot_count(session, user, slot_limit)
+        if user.subscription_until and not user.last_payment_at:
+            text = cabinet_texts.trial_active(
+                until=format_date(user),
+                used_slots=used_slots,
+                slot_limit=slot_limit,
+                invited=stats.invited_count,
+                bonus_days=stats.bonus_days,
+            )
+        else:
+            text = cabinet_texts.active(
+                plan_title=plan_title,
+                until=format_date(user),
+                used_slots=used_slots,
+                slot_limit=slot_limit,
+                invited=stats.invited_count,
+                bonus_days=stats.bonus_days,
+            )
+        markup = keyboards.cabinet_menu(has_active=True)
     else:
         text = cabinet_texts.inactive(stats.invited_count, stats.bonus_days)
         markup = keyboards.cabinet_no_access_menu()
     await callback.message.edit_text(text, reply_markup=markup)
     await callback.answer()
+
+
+async def _user_plan_title(session: AsyncSession, user) -> str:
+    """Best-effort lookup of the user's currently relevant plan title."""
+    items = await payments.list_user_payments(session, user.id, limit=5)
+    for p in items:
+        if p.status == PaymentStatus.SUCCEEDED and p.plan and not p.plan.is_device_pack:
+            code = p.plan.tariff_code or ""
+            title = tariff_title(code) or p.plan.title
+            return title
+    return "пробный период"
+
+
+async def _used_slot_count(session: AsyncSession, user, fallback: int) -> int:
+    """Return active device count if a Device model is available; fallback otherwise."""
+    try:
+        from eboost.models.device import Device  # type: ignore  # optional
+    except Exception:
+        return min(int(user.device_limit or 0), fallback)
+    from sqlalchemy import select as _select
+    result = await session.execute(
+        _select(Device).where(Device.user_id == user.id, Device.is_active.is_(True))
+    )
+    return len(list(result.scalars().all()))
 
 
 @router.callback_query(F.data == "invite")

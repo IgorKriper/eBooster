@@ -2,10 +2,12 @@ from eboost.bot.keyboards.access import (
     active_access_menu,
     after_payment_menu,
     payment_menu,
+    period_menu,
     plans_menu,
     promo_applied_menu,
     promo_invalid_menu,
     promo_question_menu,
+    tariff_menu,
 )
 from eboost.bot.keyboards.admin import (
     admin_broadcast_segments_menu,
@@ -19,6 +21,7 @@ from eboost.bot.keyboards.cabinet import cabinet_menu, cabinet_no_access_menu, p
 from eboost.bot.keyboards.common import back_menu
 from eboost.bot.keyboards.connection import (
     connect_action_menu,
+    device_card_menu,
     device_connection_menu,
     device_instruction_menu,
     device_menu,
@@ -43,6 +46,7 @@ __all__ = [
     "cabinet_menu",
     "cabinet_no_access_menu",
     "connect_action_menu",
+    "device_card_menu",
     "device_connection_menu",
     "device_instruction_menu",
     "device_menu",
@@ -51,6 +55,7 @@ __all__ = [
     "main_menu",
     "payment_history_empty_menu",
     "payment_menu",
+    "period_menu",
     "plans_menu",
     "promo_applied_menu",
     "promo_invalid_menu",
@@ -58,6 +63,7 @@ __all__ = [
     "referral_menu",
     "ready_menu",
     "support_menu",
+    "tariff_menu",
     "trial_already_used_menu",
     "trial_offer_menu",
 ]

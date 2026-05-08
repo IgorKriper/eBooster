@@ -215,6 +215,11 @@ async def complete_payment(
         )
     else:
         subscriptions.extend_subscription(payment.user, payment.plan.duration_days)
+        # TZ Exec Summary: subscription buy/extend grants the tariff's slot
+        # count. Never downgrade — keep extra slots earned via add-ons.
+        plan_slots = int(payment.plan.slot_limit or 0)
+        if plan_slots > 0:
+            payment.user.device_limit = max(int(payment.user.device_limit or 0), plan_slots)
     try:
         await subscriptions.sync_vpn_access(payment.user, vpn_provider)
     except Exception as exc:
