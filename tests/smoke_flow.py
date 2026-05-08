@@ -66,10 +66,10 @@ async def run() -> None:
             vpn_provider=vpn_provider,
         )
 
-        assert payment.final_amount == 1043
+        assert payment.final_amount == 1393
         assert referred.vpn_subscription_url
         assert referred.subscription_until is not None
-        assert referrer.bonus_days == settings.ref_trial_bonus_days + settings.ref_payment_bonus_days
+        assert referrer.bonus_days == settings.ref_unpaid_bonus_cap_days
 
     await engine.dispose()
 

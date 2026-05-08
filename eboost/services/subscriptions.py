@@ -20,17 +20,24 @@ def extend_subscription(user: User, days: int) -> None:
 
 
 async def sync_vpn_access(user: User, vpn_provider: VpnProvider) -> None:
-    if not user.vpn_user_id:
-        user.vpn_user_id = await vpn_provider.create_user(
-            telegram_id=user.telegram_id,
-            subscription_until=user.subscription_until,
-        )
-    else:
-        await vpn_provider.extend_user(vpn_user_id=user.vpn_user_id, subscription_until=user.subscription_until)
-    user.vpn_subscription_url = await vpn_provider.get_subscription_url(vpn_user_id=user.vpn_user_id)
+    try:
+        if not user.vpn_user_id:
+            user.vpn_user_id = await vpn_provider.create_user(
+                telegram_id=user.telegram_id,
+                subscription_until=user.subscription_until,
+                device_limit=user.device_limit,
+            )
+        else:
+            await vpn_provider.extend_user(vpn_user_id=user.vpn_user_id, subscription_until=user.subscription_until)
+        user.vpn_subscription_url = await vpn_provider.get_subscription_url(vpn_user_id=user.vpn_user_id)
+    except Exception as exc:
+        raise RuntimeError(f"VPN sync failed for user {user.id}: {exc}") from exc
 
 
 async def disable_access(user: User, vpn_provider: VpnProvider) -> None:
     user.is_disabled = True
-    if user.vpn_user_id:
-        await vpn_provider.disable_user(vpn_user_id=user.vpn_user_id)
+    try:
+        if user.vpn_user_id:
+            await vpn_provider.disable_user(vpn_user_id=user.vpn_user_id)
+    except Exception as exc:
+        raise RuntimeError(f"VPN disable failed for user {user.id}: {exc}") from exc

@@ -9,7 +9,8 @@ eBoost is a Telegram bot plus FastAPI backend for selling simple VPN/Proxy acces
 - PostgreSQL schema with SQLAlchemy models and Alembic migration.
 - Mock VPN provider with `create_user`, `extend_user`, `disable_user`, `get_subscription_url`.
 - Mock payment provider with `create_payment` and `handle_webhook`.
-- WATA payment adapter scaffold with real payment-link creation and webhook handling.
+- YooKassa payment adapter with real payment-link creation, webhook handling, and manual status checks.
+- WATA payment adapter remains available as an optional legacy adapter.
 - Trial access for 3 days, once per user.
 - Plans: 1 month, 3 months, 12 months.
 - Promo codes with first-payment-only rules and stored original/discount/final amounts.
@@ -175,6 +176,10 @@ WATA_ACCESS_TOKEN=
 WATA_BASE_URL=https://api.wata.pro/api/h2h
 WATA_SUCCESS_REDIRECT_URL=
 WATA_FAIL_REDIRECT_URL=
+YOOKASSA_SHOP_ID=
+YOOKASSA_SECRET_KEY=
+YOOKASSA_BASE_URL=https://api.yookassa.ru/v3
+YOOKASSA_RETURN_URL=https://t.me/your_bot
 
 TRIAL_DAYS=3
 REF_TRIAL_BONUS_DAYS=1
@@ -213,6 +218,26 @@ HTTP_VPN_USER_ID_FIELD=id
 HTTP_VPN_SUBSCRIPTION_URL_FIELD=subscription_url
 ```
 
+## YooKassa
+
+To switch from mock payments to YooKassa:
+
+```env
+PAYMENT_PROVIDER=yookassa
+YOOKASSA_SHOP_ID=your-shop-id
+YOOKASSA_SECRET_KEY=your-secret-key
+YOOKASSA_RETURN_URL=https://t.me/your_bot
+BACKEND_PUBLIC_URL=http://your-server-ip
+```
+
+Then configure this webhook URL in YooKassa:
+
+```text
+http://your-server-ip/api/payments/webhook/yookassa
+```
+
+The bot also checks payment status through the YooKassa API when the user presses the payment check button.
+
 ## WATA
 
 To switch from mock payments to WATA:
@@ -241,6 +266,9 @@ Set `ADMIN_IDS` to comma-separated Telegram IDs.
 /user <telegram_id>
 /give <telegram_id> <days>
 /disable <telegram_id>
+/promos
+/promo <code> <discount_percent> [max_uses]
+/promo_off <code>
 /broadcast <text>
 ```
 

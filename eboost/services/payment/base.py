@@ -10,6 +10,7 @@ class PaymentCreateRequest:
     user_id: int
     amount_rub: int
     description: str
+    customer_email: str | None = None
 
 
 @dataclass(frozen=True)
@@ -37,3 +38,6 @@ class PaymentProvider(ABC):
     @abstractmethod
     async def handle_webhook(self, payload: dict) -> PaymentWebhookResult:
         raise NotImplementedError
+
+    async def get_payment_status(self, *, external_id: str, payment_id: int) -> PaymentWebhookResult | None:
+        return None

@@ -1,0 +1,5 @@
+https://{$SERVER_IP} {
+    tls internal
+    encode gzip
+    reverse_proxy backend:8000
+}

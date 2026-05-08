@@ -18,5 +18,6 @@ class MockPaymentProvider(PaymentProvider):
 
     async def handle_webhook(self, payload: dict) -> PaymentWebhookResult:
         payment_id = int(payload["payment_id"])
-        status = str(payload.get("status", PaymentStatus.SUCCEEDED))
+        raw_status = str(payload.get("status", PaymentStatus.PAID))
+        status = PaymentStatus.PAID if raw_status in {"paid", "succeeded"} else raw_status
         return PaymentWebhookResult(payment_id=payment_id, external_id=f"mock-payment-{payment_id}", status=status)

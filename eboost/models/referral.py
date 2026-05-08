@@ -10,6 +10,7 @@ from eboost.models.common import TimestampMixin
 class ReferralBonusType:
     TRIAL = "trial"
     PAYMENT = "payment"
+    MILESTONE = "milestone"
 
 
 class Referral(TimestampMixin, Base):

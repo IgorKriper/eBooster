@@ -1,17 +1,29 @@
 from __future__ import annotations
 
+import html
+
 from aiogram import F, Router
-from aiogram.filters import CommandObject, CommandStart
+from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from eboost.bot import keyboards
-from eboost.bot.formatters import format_date, user_status
+from eboost.bot.formatters import format_date
 from eboost.bot.states import AccessFlow
-from eboost.core.config import Settings, get_settings
+from eboost.bot.texts import access as access_texts
+from eboost.bot.texts import cabinet as cabinet_texts
+from eboost.bot.texts import connection as connection_texts
+from eboost.bot.texts import documents as document_texts
+from eboost.bot.texts import info as info_texts
+from eboost.bot.texts import referral as referral_texts
+from eboost.bot.texts import start as start_texts
+from eboost.bot.texts import trial as trial_texts
+from eboost.core.config import get_settings
+from eboost.core.time import utcnow
+from eboost.models import Plan
 from eboost.models.payment import PaymentStatus
-from eboost.services import documents, payments, plans, promo_codes, referrals, trials, users
+from eboost.services import documents, happ, payments, plans, promo_codes, referrals, trials, users
 from eboost.services.payment.factory import get_payment_provider
 from eboost.services.subscriptions import is_subscription_active
 from eboost.services.vpn.factory import get_vpn_provider
@@ -29,12 +41,13 @@ async def ensure_user(message_or_callback: Message | CallbackQuery, session: Asy
     )
 
 
-async def render_main(target: Message | CallbackQuery, text: str | None = None) -> None:
-    body = text or "eBoost помогает подключиться к быстрому и стабильному интернету в пару нажатий."
+async def render_main(target: Message | CallbackQuery, session: AsyncSession) -> None:
+    user = await ensure_user(target, session)
+    text = start_texts.main(format_date(user) if is_subscription_active(user) else None)
     if isinstance(target, Message):
-        await target.answer(body, reply_markup=keyboards.main_menu())
+        await target.answer(text, reply_markup=keyboards.main_menu(user))
     else:
-        await target.message.edit_text(body, reply_markup=keyboards.main_menu())
+        await target.message.edit_text(text, reply_markup=keyboards.main_menu(user))
         await target.answer()
 
 
@@ -47,42 +60,75 @@ async def start(message: Message, command: CommandObject, session: AsyncSession)
         first_name=message.from_user.first_name,
         start_payload=command.args,
     )
-    await render_main(message)
+    await render_main(message, session)
+
+
+@router.message(Command("id"))
+async def my_id(message: Message) -> None:
+    await message.answer(f"Твой Telegram ID: <code>{message.from_user.id}</code>")
 
 
 @router.callback_query(F.data == "main")
-async def main_callback(callback: CallbackQuery, state: FSMContext) -> None:
+async def main_callback(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
     await state.clear()
-    await render_main(callback)
+    await render_main(callback, session)
 
 
 @router.callback_query(F.data == "trial")
-async def trial_callback(callback: CallbackQuery, session: AsyncSession) -> None:
-    settings = get_settings()
-    vpn_provider = get_vpn_provider(settings)
+async def trial_callback(callback: CallbackQuery, session: AsyncSession, state: FSMContext) -> None:
+    await state.clear()
     user = await ensure_user(callback, session)
-    activated, message = await trials.activate_trial(session, user=user, settings=settings, vpn_provider=vpn_provider)
-    if activated:
-        text = (
-            f"{message}\n\n"
-            "Выбери устройство или нажми кнопку подключения.\n\n"
-            f"Ссылка для подключения:\n{user.vpn_subscription_url}"
-        )
-        await callback.message.edit_text(text, reply_markup=keyboards.connect_menu(user))
+    if user.trial_started_at:
+        await callback.message.edit_text(trial_texts.ALREADY_USED, reply_markup=keyboards.trial_already_used_menu())
     else:
-        await callback.message.edit_text(
-            f"{message}\n\nДата окончания: {format_date(user)}",
-            reply_markup=keyboards.connect_menu(user) if user.vpn_subscription_url else keyboards.back_menu(),
-        )
+        await callback.message.edit_text(trial_texts.OFFER, reply_markup=keyboards.trial_offer_menu())
+    await callback.answer()
+
+
+@router.callback_query(F.data == "trial_activate")
+async def trial_activate_callback(callback: CallbackQuery, session: AsyncSession) -> None:
+    settings = get_settings()
+    user = await ensure_user(callback, session)
+    activated, _ = await trials.activate_trial(
+        session,
+        user=user,
+        settings=settings,
+        vpn_provider=get_vpn_provider(settings),
+    )
+    if activated:
+        await callback.message.edit_text(trial_texts.ACTIVATED, reply_markup=keyboards.device_menu("access"))
+    else:
+        await callback.message.edit_text(trial_texts.ALREADY_USED, reply_markup=keyboards.trial_already_used_menu())
     await callback.answer()
 
 
 @router.callback_query(F.data == "access")
 async def access_callback(callback: CallbackQuery, session: AsyncSession, state: FSMContext) -> None:
     await state.clear()
-    active_plans = await plans.list_active_plans(session)
-    await callback.message.edit_text("Выбери срок доступа:", reply_markup=keyboards.plans_menu(active_plans))
+    user = await ensure_user(callback, session)
+    if is_subscription_active(user):
+        await callback.message.edit_text(
+            access_texts.active_until(format_date(user)),
+            reply_markup=keyboards.active_access_menu(),
+        )
+    else:
+        await show_plan_list(callback, session, back_to="main")
     await callback.answer()
+
+
+@router.callback_query(F.data == "access_extend")
+async def access_extend_callback(callback: CallbackQuery, session: AsyncSession, state: FSMContext) -> None:
+    await state.clear()
+    await show_plan_list(callback, session, back_to="access")
+    await callback.answer()
+
+
+async def show_plan_list(callback: CallbackQuery, session: AsyncSession, *, back_to: str) -> None:
+    active_plans = await plans.list_active_plans(session)
+    await callback.message.edit_text(
+        access_texts.plans(),
+        reply_markup=keyboards.plans_menu(active_plans, back_to=back_to),
+    )
 
 
 @router.callback_query(F.data.startswith("plan:"))
@@ -94,7 +140,7 @@ async def plan_callback(callback: CallbackQuery, session: AsyncSession, state: F
         return
     await state.update_data(plan_id=plan.id, promo_code=None)
     await callback.message.edit_text(
-        f"Ты выбрал тариф:\n\n{plan.title} - {plan.price_rub}₽\n\nУ тебя есть промокод?",
+        access_texts.selected_plan(plan.title, plan.price_rub, plan.duration_days),
         reply_markup=keyboards.promo_question_menu(),
     )
     await callback.answer()
@@ -103,34 +149,29 @@ async def plan_callback(callback: CallbackQuery, session: AsyncSession, state: F
 @router.callback_query(F.data == "promo_enter")
 async def promo_enter_callback(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(AccessFlow.waiting_promo_code)
-    await callback.message.edit_text("Введи промокод одним сообщением:", reply_markup=keyboards.back_menu("access"))
+    await callback.message.edit_text(access_texts.PROMO_ENTER, reply_markup=keyboards.back_menu("access"))
     await callback.answer()
 
 
 @router.message(AccessFlow.waiting_promo_code)
 async def promo_code_message(message: Message, session: AsyncSession, state: FSMContext) -> None:
-    data = await state.get_data()
-    plan_id = data.get("plan_id")
-    plan = await plans.get_plan(session, int(plan_id)) if plan_id else None
+    plan = await _plan_from_state(session, state)
     user = await ensure_user(message, session)
     if not plan:
         await state.clear()
-        await message.answer("Выбери тариф заново.", reply_markup=keyboards.main_menu())
+        await message.answer(access_texts.plans(), reply_markup=keyboards.main_menu(user))
         return
 
     validation = await promo_codes.validate_promo_code(session, user=user, code=message.text or "")
     if not validation.is_valid or validation.promo_code is None:
-        await message.answer(validation.reason or "Промокод не найден или недоступен", reply_markup=keyboards.promo_invalid_menu())
+        await message.answer(access_texts.PROMO_INVALID, reply_markup=keyboards.promo_invalid_menu())
         return
 
     final_amount = promo_codes.apply_discount(plan.price_rub, validation.promo_code.discount_percent)
     await state.update_data(promo_code=validation.promo_code.code)
     await state.set_state(None)
     await message.answer(
-        "Промокод применён ✅\n\n"
-        f"Тариф: {plan.title}\n"
-        f"Скидка: {validation.promo_code.discount_percent}%\n"
-        f"Итого: {final_amount}₽",
+        access_texts.promo_applied(plan.title, validation.promo_code.discount_percent, final_amount),
         reply_markup=keyboards.promo_applied_menu(),
     )
 
@@ -142,9 +183,7 @@ async def create_payment_from_state(
     *,
     use_promo: bool,
 ) -> None:
-    data = await state.get_data()
-    plan_id = data.get("plan_id")
-    selected_plan = await plans.get_plan(session, int(plan_id)) if plan_id else None
+    selected_plan = await _plan_from_state(session, state)
     if not selected_plan:
         await callback.answer("Выбери тариф заново", show_alert=True)
         return
@@ -152,24 +191,122 @@ async def create_payment_from_state(
     settings = get_settings()
     provider = get_payment_provider(settings)
     user = await ensure_user(callback, session)
+    data = await state.get_data()
+
     try:
-        payment = await payments.create_payment(
-            session,
-            user=user,
-            plan=selected_plan,
-            payment_provider=provider,
-            promo_code=data.get("promo_code") if use_promo else None,
-        )
-    except ValueError as exc:
-        await callback.message.edit_text(str(exc), reply_markup=keyboards.promo_invalid_menu())
+        if provider.name == "yookassa":
+            payment = await payments.create_deferred_payment(
+                session,
+                user=user,
+                plan=selected_plan,
+                payment_provider=provider,
+                settings=settings,
+                promo_code=data.get("promo_code") if use_promo else None,
+            )
+        else:
+            payment = await payments.create_payment(
+                session,
+                user=user,
+                plan=selected_plan,
+                payment_provider=provider,
+                promo_code=data.get("promo_code") if use_promo else None,
+            )
+    except ValueError:
+        await callback.message.edit_text(access_texts.PROMO_INVALID, reply_markup=keyboards.promo_invalid_menu())
+        await callback.answer()
+        return
+    except RuntimeError:
+        await callback.message.edit_text(access_texts.PAYMENT_UNAVAILABLE, reply_markup=keyboards.back_menu("access"))
         await callback.answer()
         return
 
     await callback.message.edit_text(
-        f"Почти готово.\n\nТариф: {selected_plan.title}\nК оплате: {payment.final_amount}₽",
+        access_texts.payment_created(selected_plan.title, payment.final_amount),
         reply_markup=keyboards.payment_menu(payment),
     )
     await callback.answer()
+
+
+@router.message(AccessFlow.waiting_receipt_email)
+async def receipt_email_message(message: Message, session: AsyncSession, state: FSMContext) -> None:
+    email = (message.text or "").strip()
+    if not _looks_like_receipt_email(email):
+        await message.answer(access_texts.RECEIPT_EMAIL_INVALID, reply_markup=keyboards.back_menu("access"))
+        return
+
+    await state.update_data(receipt_email=email)
+    await state.set_state(None)
+    selected_plan = await _plan_from_state(session, state)
+    user = await ensure_user(message, session)
+    if not selected_plan:
+        await state.clear()
+        await message.answer(access_texts.plans(), reply_markup=keyboards.main_menu(user))
+        return
+
+    settings = get_settings()
+    provider = get_payment_provider(settings)
+    data = await state.get_data()
+    use_promo = bool(data.get("pending_use_promo"))
+    try:
+        payment = await _create_payment_from_state_data(
+            session,
+            user=user,
+            plan=selected_plan,
+            provider=provider,
+            data=data,
+            use_promo=use_promo,
+        )
+    except ValueError:
+        await message.answer(access_texts.PROMO_INVALID, reply_markup=keyboards.promo_invalid_menu())
+        return
+    except RuntimeError:
+        await message.answer(access_texts.PAYMENT_UNAVAILABLE, reply_markup=keyboards.back_menu("access"))
+        return
+
+    await message.answer(
+        access_texts.payment_created(selected_plan.title, payment.final_amount),
+        reply_markup=keyboards.payment_menu(payment),
+    )
+
+
+async def _create_payment_from_state_data(
+    session: AsyncSession,
+    *,
+    user,
+    plan: Plan,
+    provider,
+    data: dict,
+    use_promo: bool,
+):
+    return await payments.create_payment(
+        session,
+        user=user,
+        plan=plan,
+        payment_provider=provider,
+        promo_code=data.get("promo_code") if use_promo else None,
+        customer_email=data.get("receipt_email"),
+    )
+
+
+def _has_receipt_contact(settings, data: dict) -> bool:
+    return bool(
+        data.get("receipt_email")
+        or settings.yookassa_receipt_email.strip()
+        or settings.yookassa_receipt_phone.strip()
+    )
+
+
+def _looks_like_receipt_email(value: str) -> bool:
+    if not value or len(value) > 254 or " " in value:
+        return False
+    local, sep, domain = value.partition("@")
+    return bool(local and sep and "." in domain and not domain.startswith(".") and not domain.endswith("."))
+
+
+async def _plan_from_state(session: AsyncSession, state: FSMContext) -> Plan | None:
+    data = await state.get_data()
+    plan_id = data.get("plan_id")
+    return await plans.get_plan(session, int(plan_id)) if plan_id else None
 
 
 @router.callback_query(F.data == "pay_without_promo")
@@ -186,24 +323,19 @@ async def pay_with_promo(callback: CallbackQuery, session: AsyncSession, state: 
 async def mock_pay_callback(callback: CallbackQuery, session: AsyncSession) -> None:
     payment_id = int(callback.data.split(":", 1)[1])
     settings = get_settings()
-    vpn_provider = get_vpn_provider(settings)
     try:
-        payment = await payments.complete_payment(
+        await payments.complete_payment(
             session,
             payment_id=payment_id,
             status=PaymentStatus.SUCCEEDED,
             settings=settings,
-            vpn_provider=vpn_provider,
+            vpn_provider=get_vpn_provider(settings),
         )
     except ValueError:
         await callback.answer("Платёж не найден", show_alert=True)
         return
 
-    await callback.message.edit_text(
-        "Оплата прошла. Доступ продлён.\n\n"
-        "Выбери устройство или нажми кнопку подключения.",
-        reply_markup=keyboards.connect_menu(payment.user),
-    )
+    await callback.message.edit_text(access_texts.PAYMENT_SUCCESS, reply_markup=keyboards.after_payment_menu())
     await callback.answer("Оплата прошла")
 
 
@@ -224,26 +356,25 @@ async def payment_check(callback: CallbackQuery, session: AsyncSession) -> None:
             settings=settings,
             vpn_provider=get_vpn_provider(settings),
         )
-        user = payment.user
+    elif payment.status != PaymentStatus.SUCCEEDED and payment.external_id:
+        settings = get_settings()
+        provider = get_payment_provider(settings)
+        if provider.name == payment.provider:
+            try:
+                webhook = await provider.get_payment_status(external_id=payment.external_id, payment_id=payment.id)
+                if webhook:
+                    payment = await payments.handle_provider_webhook(
+                        session,
+                        webhook=webhook,
+                        settings=settings,
+                        vpn_provider=get_vpn_provider(settings),
+                    )
+            except (RuntimeError, ValueError):
+                pass
     if payment.status != PaymentStatus.SUCCEEDED:
         await callback.answer("Оплата пока не прошла", show_alert=True)
         return
-    await callback.message.edit_text(
-        "Оплата прошла. Доступ продлён.\n\nВыбери устройство или нажми кнопку подключения.",
-        reply_markup=keyboards.connect_menu(user),
-    )
-    await callback.answer()
-
-
-@router.callback_query(F.data == "mock_connect")
-async def mock_connect_callback(callback: CallbackQuery, session: AsyncSession) -> None:
-    user = await ensure_user(callback, session)
-    await callback.message.edit_text(
-        "Доступ готов.\n\n"
-        "В тестовом режиме здесь показывается ссылка. В боевом режиме кнопка будет открывать приложение для подключения.\n\n"
-        f"Ссылка для подключения:\n{user.vpn_subscription_url}",
-        reply_markup=keyboards.connect_menu(user),
-    )
+    await callback.message.edit_text(access_texts.PAYMENT_SUCCESS, reply_markup=keyboards.after_payment_menu())
     await callback.answer()
 
 
@@ -251,13 +382,9 @@ async def mock_connect_callback(callback: CallbackQuery, session: AsyncSession) 
 async def connect_callback(callback: CallbackQuery, session: AsyncSession) -> None:
     user = await ensure_user(callback, session)
     if not is_subscription_active(user) or not user.vpn_subscription_url:
-        await callback.message.edit_text("Сначала активируй пробный доступ или выбери тариф.", reply_markup=keyboards.main_menu())
+        await callback.message.edit_text(connection_texts.NO_ACCESS, reply_markup=keyboards.trial_already_used_menu())
     else:
-        await callback.message.edit_text(
-            "Выбери устройство или нажми кнопку подключения.\n\n"
-            f"Ссылка для подключения:\n{user.vpn_subscription_url}",
-            reply_markup=keyboards.connect_menu(user),
-        )
+        await callback.message.edit_text(connection_texts.DEVICE_SELECT, reply_markup=keyboards.device_menu("access"))
     await callback.answer()
 
 
@@ -265,16 +392,56 @@ async def connect_callback(callback: CallbackQuery, session: AsyncSession) -> No
 async def device_callback(callback: CallbackQuery, session: AsyncSession) -> None:
     device = callback.data.split(":", 1)[1]
     user = await ensure_user(callback, session)
-    names = {"iphone": "iPhone", "android": "Android", "windows": "Windows", "mac": "Mac"}
-    instruction = (
-        f"{names.get(device, 'устройство')}:\n\n"
-        "1. Установи приложение Happ.\n"
-        "2. Нажми «Подключить eBoost».\n"
-        "3. Разреши добавление доступа и включи подключение."
-    )
+    if not is_subscription_active(user) or not user.vpn_subscription_url:
+        await callback.message.edit_text(connection_texts.NO_ACCESS, reply_markup=keyboards.trial_already_used_menu())
+        await callback.answer()
+        return
+    if user.connected_at is None:
+        user.connected_at = utcnow()
+    settings = get_settings()
     await callback.message.edit_text(
-        f"{instruction}\n\nСсылка для подключения:\n{user.vpn_subscription_url}",
-        reply_markup=keyboards.connect_menu(user),
+        connection_texts.CONNECT,
+        reply_markup=keyboards.device_connection_menu(
+            device=device,
+            open_url=happ.connect_url(settings, user.telegram_id),
+        ),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("copy_link:"))
+async def copy_link_callback(callback: CallbackQuery, session: AsyncSession) -> None:
+    device = callback.data.split(":", 1)[1]
+    user = await ensure_user(callback, session)
+    if not user.vpn_subscription_url:
+        await callback.answer("Ссылка пока недоступна", show_alert=True)
+        return
+    await callback.message.edit_text(
+        connection_texts.copy_link(user.vpn_subscription_url),
+        reply_markup=keyboards.device_instruction_menu(
+            device=device,
+            url=user.vpn_subscription_url,
+            back_to=f"device:{device}",
+        ),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("instruction:"))
+async def instruction_callback(callback: CallbackQuery, session: AsyncSession) -> None:
+    device = callback.data.split(":", 1)[1]
+    user = await ensure_user(callback, session)
+    if not is_subscription_active(user) or not user.vpn_subscription_url:
+        await callback.message.edit_text(connection_texts.NO_ACCESS, reply_markup=keyboards.trial_already_used_menu())
+        await callback.answer()
+        return
+    await callback.message.edit_text(
+        connection_texts.INSTRUCTIONS.get(device, connection_texts.CONNECT),
+        reply_markup=keyboards.device_instruction_menu(
+            device=device,
+            url=user.vpn_subscription_url,
+            back_to=f"device:{device}",
+        ),
     )
     await callback.answer()
 
@@ -282,16 +449,14 @@ async def device_callback(callback: CallbackQuery, session: AsyncSession) -> Non
 @router.callback_query(F.data == "cabinet")
 async def cabinet_callback(callback: CallbackQuery, session: AsyncSession) -> None:
     user = await ensure_user(callback, session)
-    referral_count = await referrals.count_referrals(session, user.id)
-    text = (
-        "Кабинет\n\n"
-        f"Telegram ID: {user.telegram_id}\n"
-        f"Статус: {user_status(user)}\n"
-        f"Доступ до: {format_date(user)}\n"
-        f"Рефералы: {referral_count}\n"
-        f"Бонусные дни: {user.bonus_days}"
-    )
-    await callback.message.edit_text(text, reply_markup=keyboards.cabinet_menu(user))
+    stats = await referrals.referral_stats(session, referrer_id=user.id, settings=get_settings())
+    if is_subscription_active(user):
+        text = cabinet_texts.active(format_date(user), stats.invited_count, stats.bonus_days)
+        markup = keyboards.cabinet_menu()
+    else:
+        text = cabinet_texts.inactive(stats.invited_count, stats.bonus_days)
+        markup = keyboards.cabinet_no_access_menu()
+    await callback.message.edit_text(text, reply_markup=markup)
     await callback.answer()
 
 
@@ -299,10 +464,11 @@ async def cabinet_callback(callback: CallbackQuery, session: AsyncSession) -> No
 async def invite_callback(callback: CallbackQuery, session: AsyncSession) -> None:
     user = await ensure_user(callback, session)
     bot_username = (await callback.bot.get_me()).username
+    link = f"https://t.me/{bot_username}?start={user.referral_code}"
+    stats = await referrals.referral_stats(session, referrer_id=user.id, settings=get_settings())
     await callback.message.edit_text(
-        "Пригласи друга и получи бонусные дни.\n\n"
-        f"Твоя ссылка:\nhttps://t.me/{bot_username}?start={user.referral_code}",
-        reply_markup=keyboards.back_menu("cabinet"),
+        referral_texts.referral(link, stats.invited_count, stats.bonus_days, stats.friends_until_bonus),
+        reply_markup=keyboards.referral_menu(link),
     )
     await callback.answer()
 
@@ -311,24 +477,27 @@ async def invite_callback(callback: CallbackQuery, session: AsyncSession) -> Non
 async def payments_history_callback(callback: CallbackQuery, session: AsyncSession) -> None:
     user = await ensure_user(callback, session)
     items = await payments.list_user_payments(session, user.id)
-    if not items:
-        text = "Пока оплат не было."
-    else:
-        rows = [
-            f"#{payment.id}: {payment.plan.title} - {payment.final_amount}₽ - {payment.status}"
-            for payment in items
-        ]
-        text = "История оплат\n\n" + "\n".join(rows)
-    await callback.message.edit_text(text, reply_markup=keyboards.back_menu("cabinet"))
+    rows = [
+        f"{payment.created_at.strftime('%d.%m.%Y')} - <b>{payment.final_amount}₽</b> - {html.escape(payment.plan.title)} - оплачено"
+        for payment in items
+        if payment.status == PaymentStatus.SUCCEEDED
+    ]
+    markup = keyboards.back_menu("cabinet") if rows else keyboards.payment_history_empty_menu()
+    await callback.message.edit_text(cabinet_texts.payment_history(rows), reply_markup=markup)
     await callback.answer()
 
 
 @router.callback_query(F.data == "info")
 async def info_callback(callback: CallbackQuery) -> None:
+    await callback.message.edit_text(info_texts.INFO, reply_markup=keyboards.info_menu())
+    await callback.answer()
+
+
+@router.callback_query(F.data == "info_instruction")
+async def info_instruction_callback(callback: CallbackQuery) -> None:
     await callback.message.edit_text(
-        "eBoost - простой доступ к стабильному интернету без сложных настроек.\n\n"
-        "Здесь можно посмотреть документы, инструкции и поддержку.",
-        reply_markup=keyboards.info_menu(),
+        connection_texts.INSTRUCTION_SELECT,
+        reply_markup=keyboards.device_menu("info"),
     )
     await callback.answer()
 
@@ -337,7 +506,7 @@ async def info_callback(callback: CallbackQuery) -> None:
 async def documents_callback(callback: CallbackQuery, session: AsyncSession) -> None:
     docs = await documents.list_documents(session)
     await callback.message.edit_text(
-        "Документы:",
+        document_texts.LIST,
         reply_markup=keyboards.documents_menu([(doc.slug, doc.title) for doc in docs]),
     )
     await callback.answer()
@@ -350,12 +519,12 @@ async def document_callback(callback: CallbackQuery, session: AsyncSession) -> N
     if not document:
         await callback.answer("Документ не найден", show_alert=True)
         return
-    await callback.message.edit_text(f"{document.title}\n\n{document.body}", reply_markup=keyboards.back_menu("documents"))
+    await callback.message.edit_text(document.body, reply_markup=keyboards.back_menu("documents", "⬅️ Назад к документам"))
     await callback.answer()
 
 
 @router.callback_query(F.data == "support")
 async def support_callback(callback: CallbackQuery) -> None:
-    settings: Settings = get_settings()
-    await callback.message.edit_text(f"Поддержка: {settings.support_username}", reply_markup=keyboards.back_menu("info"))
+    settings = get_settings()
+    await callback.message.edit_text(info_texts.SUPPORT, reply_markup=keyboards.support_menu(settings.support_username))
     await callback.answer()

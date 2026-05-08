@@ -7,9 +7,9 @@ from eboost.models import Plan
 
 
 DEFAULT_PLANS = [
-    {"slug": "month_1", "title": "eBoost на 1 месяц", "duration_days": 30, "price_rub": 199},
-    {"slug": "month_3", "title": "eBoost на 3 месяца", "duration_days": 90, "price_rub": 499},
-    {"slug": "month_12", "title": "eBoost на 12 месяцев", "duration_days": 365, "price_rub": 1490},
+    {"slug": "month_1", "title": "eBoost на 1 месяц", "duration_days": 30, "price_rub": 299},
+    {"slug": "month_3", "title": "eBoost на 3 месяца", "duration_days": 90, "price_rub": 799},
+    {"slug": "month_12", "title": "eBoost на 12 месяцев", "duration_days": 365, "price_rub": 1990},
 ]
 
 

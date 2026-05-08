@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
-from eboost.backend.routes import payments
+from eboost.backend.routes import happ, payments
 from eboost.db.init import create_sqlite_schema_for_local_dev
 from eboost.db.session import async_session_maker
 from eboost.services.bootstrap import seed_defaults
 
 app = FastAPI(title="eBoost Backend", version="0.1.0")
+app.include_router(happ.router)
 app.include_router(payments.router)
+app.include_router(payments.checkout_router)
 
 
 @app.on_event("startup")

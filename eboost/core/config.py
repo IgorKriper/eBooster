@@ -22,6 +22,16 @@ class Settings(BaseSettings):
     wata_fail_redirect_url: str = ""
     wata_verify_webhook_signature: bool = False
     wata_webhook_public_key: str = ""
+    yookassa_shop_id: str = ""
+    yookassa_secret_key: str = ""
+    yookassa_base_url: str = "https://api.yookassa.ru/v3"
+    yookassa_return_url: str = ""
+    yookassa_receipt_email: str = ""
+    yookassa_receipt_phone: str = ""
+    yookassa_vat_code: int = 1
+    yookassa_tax_system_code: str = ""
+    yookassa_payment_mode: str = "full_payment"
+    yookassa_payment_subject: str = "service"
     http_vpn_base_url: str = ""
     http_vpn_token: str = ""
     http_vpn_create_path: str = "/users"
@@ -32,10 +42,34 @@ class Settings(BaseSettings):
     http_vpn_extend_payload: str = ""
     http_vpn_user_id_field: str = "id"
     http_vpn_subscription_url_field: str = "subscription_url"
+    marzban_base_url: str = ""
+    marzban_admin_username: str = ""
+    marzban_admin_password: str = ""
+    marzban_proxies: str = "vless"
+    marzban_inbounds: str = ""
+    marzban_data_limit_gb: int = 0
+    marzban_data_limit_reset_strategy: str = "no_reset"
+    happ_crypto_api_url: str = "https://crypto.happ.su/api-v2.php"
+    vpn_server_specs: str = (
+        "de|🇩🇪 Germany - eBoost|64.188.119.244|1|900;"
+        "fi|🇫🇮 Finland - eBoost|194.113.38.23|2|900;"
+        "nl|🇳🇱 Netherlands - eBoost|2.26.111.255|3|900"
+    )
+    server_load_check_interval_seconds: int = 300
+    server_load_warning_percent: int = 70
+    server_load_critical_percent: int = 85
+    server_load_reset_percent: int = 60
+    server_load_warning_cooldown_hours: int = 6
+    server_load_critical_cooldown_hours: int = 2
 
     trial_days: int = 3
     ref_trial_bonus_days: int = 1
     ref_payment_bonus_days: int = 7
+    ref_friends_for_bonus: int = 3
+    ref_trial_daily_bonus_limit_days: int = 5
+    ref_unpaid_bonus_cap_days: int = 7
+    ref_paid_bonus_percent_limit: int = 50
+    default_device_limit: int = 5
 
     support_username: str = "@eBoost_support"
     admin_ids: str = ""

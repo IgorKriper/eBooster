@@ -5,7 +5,7 @@ This MVP is already wired through provider interfaces. To replace mocks, collect
 ## Required Decisions
 
 - VPN/Proxy provider or panel that can issue Happ-compatible subscription links: Marzban, 3x-ui, Hiddify panel, custom API, or another service.
-- Payment provider: WATA is the first real-provider target in this codebase.
+- Payment provider: YooKassa is the preferred real-provider target in this codebase.
 - Public HTTPS backend URL for payment webhooks.
 - Production PostgreSQL connection string.
 - Telegram bot token.
@@ -32,34 +32,30 @@ Implement `eboost.services.payment.base.PaymentProvider`:
 ```text
 create_payment
 handle_webhook
+get_payment_status (optional, used by the bot payment check button)
 ```
 
 Then register the adapter in `eboost.services.payment.factory.get_payment_provider`.
 
-## WATA Payments
+## YooKassa Payments
 
 Set:
 
 ```env
-PAYMENT_PROVIDER=wata
-WATA_ACCESS_TOKEN=
-BACKEND_PUBLIC_URL=https://your-domain.example
+PAYMENT_PROVIDER=yookassa
+YOOKASSA_SHOP_ID=
+YOOKASSA_SECRET_KEY=
+YOOKASSA_RETURN_URL=https://t.me/your_bot
+BACKEND_PUBLIC_URL=https://your-server-ip
 ```
 
-Configure the WATA webhook URL in the merchant dashboard:
+Configure the YooKassa webhook URL in the merchant dashboard:
 
 ```text
-https://your-domain.example/api/payments/webhook/wata
+https://your-server-ip/api/payments/webhook/yookassa
 ```
 
-The adapter sends `orderId` equal to the internal payment ID. The webhook handler uses `orderId` to activate the payment and extend access.
-
-For production, enable signature verification after you have WATA's webhook public key:
-
-```env
-WATA_VERIFY_WEBHOOK_SIGNATURE=true
-WATA_WEBHOOK_PUBLIC_KEY="-----BEGIN PUBLIC KEY-----..."
-```
+The adapter stores the internal payment ID in YooKassa `metadata.payment_id`. The webhook handler and the bot payment check button use that metadata to activate the payment and extend access.
 
 The service layer already persists:
 
@@ -78,10 +74,10 @@ BOT_TOKEN=
 DATABASE_URL=
 BACKEND_PUBLIC_URL=https://your-domain.example
 
-PAYMENT_PROVIDER=wata
-WATA_ACCESS_TOKEN=
-WATA_SUCCESS_REDIRECT_URL=
-WATA_FAIL_REDIRECT_URL=
+PAYMENT_PROVIDER=yookassa
+YOOKASSA_SHOP_ID=
+YOOKASSA_SECRET_KEY=
+YOOKASSA_RETURN_URL=https://t.me/your_bot
 
 VPN_PROVIDER=http
 VPN_KEYS=

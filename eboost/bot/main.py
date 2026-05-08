@@ -4,7 +4,9 @@ import asyncio
 import logging
 
 from aiogram import Bot, Dispatcher
+from aiogram.client.default import DefaultBotProperties
 from aiogram.client.session.aiohttp import AiohttpSession
+from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 
 from eboost.bot.middleware import DbSessionMiddleware
@@ -13,6 +15,8 @@ from eboost.core.config import get_settings
 from eboost.db.init import create_sqlite_schema_for_local_dev
 from eboost.db.session import async_session_maker
 from eboost.services.bootstrap import seed_defaults
+from eboost.services.notifications import notification_loop
+from eboost.services.server_load import server_load_monitor_loop
 
 
 async def on_startup() -> None:
@@ -29,12 +33,18 @@ async def main() -> None:
         raise RuntimeError("Set BOT_TOKEN in .env")
 
     telegram_session = AiohttpSession(proxy=settings.telegram_proxy or None)
-    bot = Bot(token=settings.bot_token, session=telegram_session)
+    bot = Bot(
+        token=settings.bot_token,
+        session=telegram_session,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+    )
     dispatcher = Dispatcher(storage=MemoryStorage())
     dispatcher.update.middleware(DbSessionMiddleware())
     dispatcher.include_router(admin.router)
     dispatcher.include_router(common.router)
     await on_startup()
+    asyncio.create_task(notification_loop(bot, async_session_maker))
+    asyncio.create_task(server_load_monitor_loop(bot, async_session_maker))
     await dispatcher.start_polling(bot)
 
 
