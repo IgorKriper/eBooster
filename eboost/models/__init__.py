@@ -1,3 +1,4 @@
+from eboost.models.connect_token import ConnectToken
 from eboost.models.document import Document
 from eboost.models.log import AdminLog, SystemLog
 from eboost.models.notification import NotificationLog, SubscriptionNotification
@@ -10,6 +11,7 @@ from eboost.models.user import User
 
 __all__ = [
     "AdminLog",
+    "ConnectToken",
     "Document",
     "NotificationLog",
     "SubscriptionNotification",

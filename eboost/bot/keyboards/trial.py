@@ -6,7 +6,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 def trial_offer_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="🚀 Активировать доступ", callback_data="trial_activate")],
+            [InlineKeyboardButton(text="🚀 Активировать пробный период", callback_data="trial_activate")],
             [InlineKeyboardButton(text="⬅️ Назад", callback_data="main")],
         ]
     )

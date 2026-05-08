@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 import html
+import logging
+from pathlib import Path
 
 from aiogram import F, Router
 from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, FSInputFile, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from eboost.bot import keyboards
-from eboost.bot.formatters import format_date
+from eboost.bot.formatters import format_date, format_subscription_panel
 from eboost.bot.states import AccessFlow
 from eboost.bot.texts import access as access_texts
 from eboost.bot.texts import cabinet as cabinet_texts
@@ -23,10 +25,23 @@ from eboost.core.config import get_settings
 from eboost.core.time import utcnow
 from eboost.models import Plan
 from eboost.models.payment import PaymentStatus
-from eboost.services import documents, happ, payments, plans, promo_codes, referrals, trials, users
+from eboost.models.plan import PLAN_KIND_DEVICE_PACK
+from eboost.services import (
+    connect_tokens,
+    documents,
+    happ,
+    payments,
+    plans,
+    promo_codes,
+    referrals,
+    trials,
+    users,
+)
 from eboost.services.payment.factory import get_payment_provider
 from eboost.services.subscriptions import is_subscription_active
 from eboost.services.vpn.factory import get_vpn_provider
+
+logger = logging.getLogger(__name__)
 
 router = Router()
 
@@ -41,26 +56,50 @@ async def ensure_user(message_or_callback: Message | CallbackQuery, session: Asy
     )
 
 
+async def _send_welcome(message: Message, user) -> None:
+    settings = get_settings()
+    panel = format_subscription_panel(user)
+    text = start_texts.welcome_for(user, panel=panel)
+    markup = keyboards.main_menu(user)
+    logo_path = Path(settings.welcome_logo_path) if settings.welcome_logo_path else None
+    if logo_path and logo_path.is_file():
+        try:
+            await message.answer_photo(
+                FSInputFile(str(logo_path)),
+                caption=text,
+                reply_markup=markup,
+            )
+            return
+        except Exception:
+            logger.exception("welcome_photo_failed path=%s", logo_path)
+    await message.answer(text, reply_markup=markup)
+
+
 async def render_main(target: Message | CallbackQuery, session: AsyncSession) -> None:
     user = await ensure_user(target, session)
-    text = start_texts.main(format_date(user) if is_subscription_active(user) else None)
+    panel = format_subscription_panel(user)
+    text = start_texts.welcome_for(user, panel=panel)
+    markup = keyboards.main_menu(user)
     if isinstance(target, Message):
-        await target.answer(text, reply_markup=keyboards.main_menu(user))
+        await _send_welcome(target, user)
     else:
-        await target.message.edit_text(text, reply_markup=keyboards.main_menu(user))
+        try:
+            await target.message.edit_text(text, reply_markup=markup)
+        except Exception:
+            await target.message.answer(text, reply_markup=markup)
         await target.answer()
 
 
 @router.message(CommandStart())
 async def start(message: Message, command: CommandObject, session: AsyncSession) -> None:
-    await users.get_or_create_user(
+    user = await users.get_or_create_user(
         session,
         telegram_id=message.from_user.id,
         username=message.from_user.username,
         first_name=message.from_user.first_name,
         start_payload=command.args,
     )
-    await render_main(message, session)
+    await _send_welcome(message, user)
 
 
 @router.message(Command("id"))
@@ -383,8 +422,42 @@ async def connect_callback(callback: CallbackQuery, session: AsyncSession) -> No
     user = await ensure_user(callback, session)
     if not is_subscription_active(user) or not user.vpn_subscription_url:
         await callback.message.edit_text(connection_texts.NO_ACCESS, reply_markup=keyboards.trial_already_used_menu())
+        await callback.answer()
+        return
+
+    settings = get_settings()
+    token = await connect_tokens.issue_connect_token(session, user=user, settings=settings)
+    public_url = happ.public_connect_url(settings, token.token)
+    await callback.message.edit_text(
+        access_texts.connect_panel(public_url),
+        reply_markup=keyboards.connect_action_menu(public_url),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "connect_devices")
+async def connect_devices_callback(callback: CallbackQuery, session: AsyncSession) -> None:
+    user = await ensure_user(callback, session)
+    if not is_subscription_active(user) or not user.vpn_subscription_url:
+        await callback.message.edit_text(connection_texts.NO_ACCESS, reply_markup=keyboards.trial_already_used_menu())
     else:
         await callback.message.edit_text(connection_texts.DEVICE_SELECT, reply_markup=keyboards.device_menu("access"))
+    await callback.answer()
+
+
+@router.callback_query(F.data == "device_pack")
+async def device_pack_callback(callback: CallbackQuery, session: AsyncSession, state: FSMContext) -> None:
+    await state.clear()
+    user = await ensure_user(callback, session)
+    if not is_subscription_active(user):
+        await callback.message.edit_text(connection_texts.NO_ACCESS, reply_markup=keyboards.trial_already_used_menu())
+        await callback.answer()
+        return
+    packs = await plans.list_device_packs(session)
+    await callback.message.edit_text(
+        access_texts.device_packs(user.device_limit),
+        reply_markup=keyboards.plans_menu(packs, back_to="main"),
+    )
     await callback.answer()
 
 

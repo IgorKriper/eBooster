@@ -110,7 +110,7 @@ async def _send_payment_to_provider(
                 payment_id=payment.id,
                 user_id=payment.user_id,
                 amount_rub=payment.final_amount,
-                description=payment.plan.title if payment.plan else "eBoost",
+                description=payment.plan.title if payment.plan else "eBooster",
                 customer_email=customer_email,
             )
         )
@@ -209,7 +209,12 @@ async def complete_payment(
     payment.status = PaymentStatus.SUCCEEDED
     payment.paid_at = utcnow()
     had_vpn_user = bool(payment.user.vpn_user_id)
-    subscriptions.extend_subscription(payment.user, payment.plan.duration_days)
+    if payment.plan.is_device_pack:
+        payment.user.device_limit = max(int(payment.user.device_limit or 0), 0) + max(
+            int(payment.plan.bonus_devices or 0), 0
+        )
+    else:
+        subscriptions.extend_subscription(payment.user, payment.plan.duration_days)
     try:
         await subscriptions.sync_vpn_access(payment.user, vpn_provider)
     except Exception as exc:
@@ -221,12 +226,23 @@ async def complete_payment(
         user_id=payment.user_id,
         details={"payment_id": payment.id, "provider_payment_id": payment.provider_payment_id, "amount": payment.final_amount},
     )
-    await logs.system_log(
-        session,
-        event="subscription_extended",
-        user_id=payment.user_id,
-        details={"days": payment.plan.duration_days, "subscription_until": payment.user.subscription_until},
-    )
+    if payment.plan.is_device_pack:
+        await logs.system_log(
+            session,
+            event="device_pack_purchased",
+            user_id=payment.user_id,
+            details={
+                "bonus_devices": payment.plan.bonus_devices,
+                "device_limit": payment.user.device_limit,
+            },
+        )
+    else:
+        await logs.system_log(
+            session,
+            event="subscription_extended",
+            user_id=payment.user_id,
+            details={"days": payment.plan.duration_days, "subscription_until": payment.user.subscription_until},
+        )
     await logs.system_log(
         session,
         event="vpn_access_extended" if had_vpn_user else "vpn_access_created",

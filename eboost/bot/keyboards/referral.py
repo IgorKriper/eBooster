@@ -6,7 +6,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 
 def referral_menu(referral_link: str) -> InlineKeyboardMarkup:
-    share_url = f"https://t.me/share/url?url={quote(referral_link)}&text={quote('Попробуй eBoost')}"
+    share_url = f"https://t.me/share/url?url={quote(referral_link)}&text={quote('Попробуй eBooster')}"
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="📤 Поделиться ссылкой", url=share_url)],

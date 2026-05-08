@@ -138,7 +138,7 @@ class MarzbanVpnProvider(VpnProvider):
             "expire": self._expire(subscription_until),
             "data_limit": self.settings.marzban_data_limit_gb * 1024 * 1024 * 1024,
             "data_limit_reset_strategy": self.settings.marzban_data_limit_reset_strategy,
-            "note": f"eBoost Telegram ID: {telegram_id}; device limit: {device_limit}",
+            "note": f"eBooster Telegram ID: {telegram_id}; device limit: {device_limit}",
         }
         if include_username:
             payload["username"] = username

@@ -26,7 +26,7 @@ async def open_happ(telegram_id: int, token: str, session: AsyncSession = Depend
     result = await session.execute(select(User).where(User.telegram_id == telegram_id))
     user = result.scalar_one_or_none()
     if not user or not user.vpn_subscription_url or not is_subscription_active(user):
-        return _plain_page("Доступ не активен", "Вернись в eBoost и активируй доступ.")
+        return _plain_page("Доступ не активен", "Вернись в eBooster и активируй доступ.")
 
     try:
         happ_link = await happ.encrypted_link(settings, user.vpn_subscription_url)
@@ -42,14 +42,14 @@ def _open_page(happ_link: str, subscription_url: str) -> str:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>eBoost</title>
+  <title>eBooster</title>
   <style>{_css()}</style>
 </head>
 <body>
   <main>
-    <h1>eBoost</h1>
+    <h1>eBooster</h1>
     <p>Открываем Happ.</p>
-    <p>Подтверди добавление eBoost в приложении.</p>
+    <p>Подтверди добавление eBooster в приложении.</p>
     <a class="button" href="{safe_link}">Открыть Happ</a>
     {_fallback_block(subscription_url)}
   </main>
@@ -69,12 +69,12 @@ def _fallback_page(subscription_url: str) -> str:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>eBoost</title>
+  <title>eBooster</title>
   <style>{_css()}</style>
 </head>
 <body>
   <main>
-    <h1>eBoost</h1>
+    <h1>eBooster</h1>
     {_fallback_block(subscription_url, hidden=False)}
   </main>
 </body>
@@ -87,7 +87,7 @@ def _plain_page(title: str, message: str) -> str:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>eBoost</title>
+  <title>eBooster</title>
   <style>{_css()}</style>
 </head>
 <body>

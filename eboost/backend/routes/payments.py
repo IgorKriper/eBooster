@@ -22,7 +22,6 @@ from eboost.models import Payment
 from eboost.models.payment import PaymentStatus
 from eboost.services import payments
 from eboost.services.payment.factory import get_payment_provider
-from eboost.services.payment.wata_signature import verify_wata_signature
 from eboost.services.vpn.factory import get_vpn_provider
 
 router = APIRouter(prefix="/api/payments", tags=["payments"])
@@ -120,38 +119,6 @@ async def mock_webhook(payload: dict, session: AsyncSession = Depends(session_de
     return {"status": "ok", "payment_id": payment.id}
 
 
-@router.post("/webhook/wata")
-async def wata_webhook(request: Request, session: AsyncSession = Depends(session_dependency)) -> dict[str, str | int]:
-    settings = get_settings()
-    body = await request.body()
-    if settings.wata_verify_webhook_signature:
-        signature = request.headers.get("X-Signature")
-        if not signature or not settings.wata_webhook_public_key:
-            raise HTTPException(status_code=401, detail="Missing WATA webhook signature")
-        if not verify_wata_signature(
-            public_key_pem=settings.wata_webhook_public_key,
-            signature=signature,
-            body=body,
-        ):
-            raise HTTPException(status_code=401, detail="Invalid WATA webhook signature")
-
-    payload = await request.json()
-    provider = get_payment_provider(settings)
-    webhook = await provider.handle_webhook(payload)
-    was_paid = await _payment_was_paid(session, webhook.payment_id)
-    try:
-        payment = await payments.handle_provider_webhook(
-            session,
-            webhook=webhook,
-            settings=settings,
-            vpn_provider=get_vpn_provider(settings),
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    await _notify_payment_success(payment, settings=settings, was_paid=was_paid)
-    return {"status": "ok", "payment_id": payment.id}
-
-
 @router.post("/webhook/yookassa")
 async def yookassa_webhook(request: Request, session: AsyncSession = Depends(session_dependency)) -> dict[str, str | int]:
     settings = get_settings()
@@ -226,7 +193,7 @@ def _looks_like_email(value: str) -> bool:
 
 
 def _checkout_html(payment: Payment, *, token: str, error: str | None) -> str:
-    plan = html.escape(payment.plan.title if payment.plan else "eBoost")
+    plan = html.escape(payment.plan.title if payment.plan else "eBooster")
     error_html = f"<div class='error'>{html.escape(error)}</div>" if error else ""
     action = f"/pay/{payment.id}?token={html.escape(token)}"
     return f"""<!doctype html>
@@ -234,7 +201,7 @@ def _checkout_html(payment: Payment, *, token: str, error: str | None) -> str:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Оплата eBoost</title>
+  <title>Оплата eBooster</title>
   <style>
     :root {{ color-scheme: light; }}
     * {{ box-sizing: border-box; }}
@@ -302,7 +269,7 @@ def _checkout_html(payment: Payment, *, token: str, error: str | None) -> str:
 </head>
 <body>
   <main>
-    <div class="brand">eBoost</div>
+    <div class="brand">eBooster</div>
     <h1>Оплата доступа</h1>
     <div class="summary">
       <div class="row"><span class="muted">Тариф</span><b>{plan}</b></div>
@@ -337,7 +304,7 @@ def _redirect_html(url: str) -> str:
 
 
 def _payment_success_html(settings) -> str:
-    bot_url = html.escape(settings.yookassa_return_url or "https://t.me/eBooster_vpn_bot", quote=True)
+    bot_url = html.escape(settings.yookassa_return_url or "https://t.me/eBoosterer_vpn_bot", quote=True)
     return f"""<!doctype html>
 <html lang="ru">
 <head>
@@ -356,7 +323,7 @@ def _payment_success_html(settings) -> str:
     <h1>Оплата прошла успешно</h1>
     <p>Доступ откроется в Telegram автоматически.</p>
     <p>Если сообщение не пришло, вернись в бот и нажми "Проверить оплату".</p>
-    <a href="{bot_url}">Вернуться в eBoost</a>
+    <a href="{bot_url}">Вернуться в eBooster</a>
   </main>
 </body>
 </html>"""

@@ -24,6 +24,12 @@ def connect_url(settings: Settings, telegram_id: int) -> str:
     return f"{base_url}/api/happ/connect/{telegram_id}?token={token}"
 
 
+def public_connect_url(settings: Settings, token: str) -> str:
+    """URL of the branded /connect page that consumes a one-shot ConnectToken."""
+    base = (settings.connect_public_url or settings.backend_public_url).rstrip("/")
+    return f"{base}/connect?token={token}"
+
+
 async def encrypted_link(settings: Settings, subscription_url: str) -> str:
     async with aiohttp.ClientSession() as session:
         async with session.post(

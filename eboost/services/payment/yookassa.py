@@ -31,7 +31,7 @@ class YooKassaPaymentProvider(PaymentProvider):
                 "locale": "ru_RU",
                 "return_url": self.settings.yookassa_return_url or self.settings.backend_public_url,
             },
-            "description": f"eBoost: {request.description}",
+            "description": f"eBooster: {request.description}",
             "metadata": {
                 "payment_id": str(request.payment_id),
                 "user_id": str(request.user_id),
@@ -135,8 +135,8 @@ class YooKassaPaymentProvider(PaymentProvider):
         return receipt
 
     def _receipt_description(self, description: str) -> str:
-        value = f"eBoost: {description}".strip()
-        return value[:128] or "eBoost"
+        value = f"eBooster: {description}".strip()
+        return value[:128] or "eBooster"
 
     def _amount_to_int(self, amount: object) -> int | None:
         if amount is None:

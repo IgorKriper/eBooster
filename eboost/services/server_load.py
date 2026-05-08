@@ -238,6 +238,9 @@ async def _sync_hosts(provider: MarzbanVpnProvider, states: list[ServerLoadState
 
 async def _maybe_notify_admins(bot: Bot, session: AsyncSession, state: ServerLoadState, *, settings: Settings) -> None:
     now = utcnow()
+    # Skip nodes we have not sampled yet (e.g. first run or Marzban error)
+    if state.load_percent is None:
+        return
     if state.load_percent < settings.server_load_reset_percent:
         state.alert_level = None
         state.alert_sent_at = None

@@ -1,6 +1,6 @@
-# eBoost MVP
+# eBooster MVP
 
-eBoost is a Telegram bot plus FastAPI backend for selling simple VPN/Proxy access positioned as an internet booster. This MVP uses mock VPN and mock payments first, while keeping both integrations behind provider interfaces so real services can be added without rewriting bot or subscription logic.
+eBooster is a Telegram bot plus FastAPI backend for selling simple VPN/Proxy access positioned as an internet booster. This MVP uses mock VPN and mock payments first, while keeping both integrations behind provider interfaces so real services can be added without rewriting bot or subscription logic.
 
 ## What Is Included
 
@@ -10,7 +10,6 @@ eBoost is a Telegram bot plus FastAPI backend for selling simple VPN/Proxy acces
 - Mock VPN provider with `create_user`, `extend_user`, `disable_user`, `get_subscription_url`.
 - Mock payment provider with `create_payment` and `handle_webhook`.
 - YooKassa payment adapter with real payment-link creation, webhook handling, and manual status checks.
-- WATA payment adapter remains available as an optional legacy adapter.
 - Trial access for 3 days, once per user.
 - Plans: 1 month, 3 months, 12 months.
 - Promo codes with first-payment-only rules and stored original/discount/final amounts.
@@ -154,9 +153,9 @@ http://localhost:8000/api/payments/mock/pay/{payment_id}
 
 On startup the app seeds:
 
-- `eBoost на 1 месяц` - 199 RUB.
-- `eBoost на 3 месяца` - 499 RUB.
-- `eBoost на 12 месяцев` - 1490 RUB.
+- `eBooster на 1 месяц` - 299 RUB.
+- `eBooster на 3 месяца` - 799 RUB.
+- `eBooster на 12 месяцев` - 1990 RUB.
 - Documents: privacy policy, terms, refunds.
 - Promo code `WELCOME30` for 30% off the first payment.
 
@@ -172,10 +171,6 @@ PAYMENT_PROVIDER=mock
 VPN_PROVIDER=mock
 PAYMENT_KEYS=
 VPN_KEYS=
-WATA_ACCESS_TOKEN=
-WATA_BASE_URL=https://api.wata.pro/api/h2h
-WATA_SUCCESS_REDIRECT_URL=
-WATA_FAIL_REDIRECT_URL=
 YOOKASSA_SHOP_ID=
 YOOKASSA_SECRET_KEY=
 YOOKASSA_BASE_URL=https://api.yookassa.ru/v3
@@ -187,7 +182,7 @@ REF_PAYMENT_BONUS_DAYS=7
 # Optional legacy alias from the original brief. If set, it maps to payment referral bonus.
 REF_BONUS=
 
-SUPPORT_USERNAME=@eBoost_support
+SUPPORT_USERNAME=@eBooster_support
 ADMIN_IDS=123456789
 ```
 
@@ -237,24 +232,6 @@ http://your-server-ip/api/payments/webhook/yookassa
 ```
 
 The bot also checks payment status through the YooKassa API when the user presses the payment check button.
-
-## WATA
-
-To switch from mock payments to WATA:
-
-```env
-PAYMENT_PROVIDER=wata
-WATA_ACCESS_TOKEN=your-token
-BACKEND_PUBLIC_URL=https://your-domain.example
-```
-
-Then configure this webhook URL in WATA:
-
-```text
-https://your-domain.example/api/payments/webhook/wata
-```
-
-WATA payment buttons must use public HTTPS URLs. Localhost is intentionally handled by the mock callback flow instead.
 
 ## Admin Commands
 

@@ -1,1 +1,1 @@
-"""User-facing Telegram texts for eBoost."""
+"""User-facing Telegram texts for eBooster."""

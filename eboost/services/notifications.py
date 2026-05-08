@@ -125,16 +125,16 @@ async def _already_sent(session: AsyncSession, *, user_id: int, notification_typ
 def _message_for(notification_type: str) -> str:
     messages = {
         NotificationType.START_NO_TRIAL_1H: (
-            "<b>🚀 Ты ещё не подключил eBoost</b>\n\n"
+            "<b>🚀 Ты ещё не подключил eBooster</b>\n\n"
             "Попробуй бесплатно - подключение занимает меньше минуты"
         ),
         NotificationType.START_NO_TRIAL_24H: (
             "<b>🎁 Бесплатный доступ всё ещё доступен</b>\n\n"
-            "У тебя есть 3 дня, чтобы попробовать eBoost"
+            "У тебя есть 3 дня, чтобы попробовать eBooster"
         ),
         NotificationType.CONNECTED_24H: (
-            "<b>🚀 Как работает eBoost?</b>\n\n"
-            "Ты уже попробовал eBoost в работе.\n\n"
+            "<b>🚀 Как работает eBooster?</b>\n\n"
+            "Ты уже попробовал eBooster в работе.\n\n"
             "Соединение стало стабильнее в повседневных задачах\n"
             "и интернет работает без лишних задержек.\n\n"
             "Если всё устраивает - можно продолжить пользоваться\n"
@@ -146,7 +146,7 @@ def _message_for(notification_type: str) -> str:
         ),
         NotificationType.TRIAL_EXPIRED: (
             "<b>⛔ Доступ закончился</b>\n\n"
-            "Чтобы продолжить пользоваться eBoost - выбери тариф"
+            "Чтобы продолжить пользоваться eBooster - выбери тариф"
         ),
         NotificationType.SUB_EXPIRE_3D: "<b>⏳ Доступ скоро закончится</b>",
         NotificationType.SUB_EXPIRE_1D: "<b>⚠️ Остался 1 день</b>",

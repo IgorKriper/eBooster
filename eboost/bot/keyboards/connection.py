@@ -45,3 +45,13 @@ def ready_menu() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="⬅️ В меню", callback_data="main")],
         ]
     )
+
+
+def connect_action_menu(open_url: str, back_to: str = "main") -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🚀 Открыть и подключить", url=open_url)],
+            [InlineKeyboardButton(text="📖 Инструкции по устройствам", callback_data="connect_devices")],
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data=back_to)],
+        ]
+    )

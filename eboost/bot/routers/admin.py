@@ -165,7 +165,7 @@ async def _stats_text(session: AsyncSession) -> str:
     promo_uses = await session.scalar(select(func.count(PromoCodeUsage.id)))
     referrals_count = await session.scalar(select(func.count(Referral.id)))
     return (
-        "<b>📊 Статистика eBoost</b>\n\n"
+        "<b>📊 Статистика eBooster</b>\n\n"
         f"Пользователей: <b>{users_count or 0}</b>\n"
         f"Активных подписок: <b>{active_subscriptions or 0}</b>\n"
         f"Пробных доступов: <b>{active_trials or 0}</b>\n"

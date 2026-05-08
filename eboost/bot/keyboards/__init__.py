@@ -17,7 +17,13 @@ from eboost.bot.keyboards.admin import (
 )
 from eboost.bot.keyboards.cabinet import cabinet_menu, cabinet_no_access_menu, payment_history_empty_menu
 from eboost.bot.keyboards.common import back_menu
-from eboost.bot.keyboards.connection import device_instruction_menu, device_menu, device_connection_menu, ready_menu
+from eboost.bot.keyboards.connection import (
+    connect_action_menu,
+    device_connection_menu,
+    device_instruction_menu,
+    device_menu,
+    ready_menu,
+)
 from eboost.bot.keyboards.documents import documents_menu
 from eboost.bot.keyboards.info import info_menu, support_menu
 from eboost.bot.keyboards.main import main_menu
@@ -36,6 +42,7 @@ __all__ = [
     "back_menu",
     "cabinet_menu",
     "cabinet_no_access_menu",
+    "connect_action_menu",
     "device_connection_menu",
     "device_instruction_menu",
     "device_menu",
