@@ -57,6 +57,13 @@ async def ensure_user(message_or_callback: Message | CallbackQuery, session: Asy
 
 
 async def _send_welcome(message: Message, user) -> None:
+    """Send brand logo (if available) followed by the welcome text + main menu.
+
+    The photo and the text are sent as TWO separate messages so the inline
+    keyboard sits on a plain text message — that lets every callback handler
+    use `edit_text` without running into Telegram's "no text to edit" error
+    that a photo+caption message would trigger.
+    """
     settings = get_settings()
     panel = format_subscription_panel(user)
     text = start_texts.welcome_for(user, panel=panel)
@@ -64,12 +71,7 @@ async def _send_welcome(message: Message, user) -> None:
     logo_path = Path(settings.welcome_logo_path) if settings.welcome_logo_path else None
     if logo_path and logo_path.is_file():
         try:
-            await message.answer_photo(
-                FSInputFile(str(logo_path)),
-                caption=text,
-                reply_markup=markup,
-            )
-            return
+            await message.answer_photo(FSInputFile(str(logo_path)))
         except Exception:
             logger.exception("welcome_photo_failed path=%s", logo_path)
     await message.answer(text, reply_markup=markup)
