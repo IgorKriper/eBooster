@@ -37,6 +37,7 @@ from eboost.services import (
     trials,
     users,
 )
+from eboost.services.plans import SOLO_ADDON_SLUG
 from eboost.services.payment.factory import get_payment_provider
 from eboost.services.subscriptions import is_subscription_active
 from eboost.services.vpn.factory import get_vpn_provider
@@ -149,7 +150,7 @@ async def access_callback(callback: CallbackQuery, session: AsyncSession, state:
     user = await ensure_user(callback, session)
     if is_subscription_active(user):
         await callback.message.edit_text(
-            access_texts.active_until(format_date(user)),
+            access_texts.active_until(format_date(user), int(user.device_limit or 0)),
             reply_markup=keyboards.active_access_menu(),
         )
     else:
@@ -180,10 +181,22 @@ async def plan_callback(callback: CallbackQuery, session: AsyncSession, state: F
         await callback.answer("Тариф не найден", show_alert=True)
         return
     await state.update_data(plan_id=plan.id, promo_code=None)
-    await callback.message.edit_text(
-        access_texts.selected_plan(plan.title, plan.price_rub, plan.duration_days),
-        reply_markup=keyboards.promo_question_menu(),
-    )
+    if plan.is_device_pack:
+        user = await ensure_user(callback, session)
+        text = access_texts.selected_device_pack(
+            plan.title,
+            plan.price_rub,
+            int(plan.bonus_devices or 0),
+            int(user.device_limit or 0),
+        )
+    else:
+        text = access_texts.selected_plan(
+            plan.title,
+            plan.price_rub,
+            plan.duration_days,
+            int(plan.slot_devices or 0),
+        )
+    await callback.message.edit_text(text, reply_markup=keyboards.promo_question_menu())
     await callback.answer()
 
 
@@ -449,22 +462,56 @@ async def connect_devices_callback(callback: CallbackQuery, session: AsyncSessio
 
 @router.callback_query(F.data == "device_pack")
 async def device_pack_callback(callback: CallbackQuery, session: AsyncSession, state: FSMContext) -> None:
+    """S07/S17: показать единственный аддон "+1 устройство" (TZ v2 — 99₽).
+
+    Раньше показывали список pack-ов (1/2/3 устройства). По ТЗ остался один.
+    Если в БД его нет (например, миграция не прокатилась) — fallback на старый
+    список pack-ов.
+    """
     await state.clear()
     user = await ensure_user(callback, session)
     if not is_subscription_active(user):
         await callback.message.edit_text(connection_texts.NO_ACCESS, reply_markup=keyboards.trial_already_used_menu())
         await callback.answer()
         return
-    packs = await plans.list_device_packs(session)
+
+    addon = await plans.get_plan_by_slug(session, SOLO_ADDON_SLUG)
+    if addon is None or not addon.is_active:
+        packs = await plans.list_device_packs(session)
+        if not packs:
+            await callback.answer("Аддон сейчас недоступен", show_alert=True)
+            return
+        await callback.message.edit_text(
+            access_texts.device_packs(int(user.device_limit or 0)),
+            reply_markup=keyboards.plans_menu(packs, back_to="main"),
+        )
+        await callback.answer()
+        return
+
     await callback.message.edit_text(
-        access_texts.device_packs(user.device_limit),
-        reply_markup=keyboards.plans_menu(packs, back_to="main"),
+        access_texts.device_packs(int(user.device_limit or 0)),
+        reply_markup=keyboards.plans_menu([addon], back_to="main"),
     )
     await callback.answer()
 
 
+def _download_url_for(device: str, settings) -> str:
+    return {
+        "iphone": settings.happ_ios_url,
+        "android": settings.happ_android_url,
+        "windows": settings.happ_windows_url,
+        "mac": settings.happ_macos_url,
+    }.get(device, settings.happ_ios_url)
+
+
 @router.callback_query(F.data.startswith("device:"))
 async def device_callback(callback: CallbackQuery, session: AsyncSession) -> None:
+    """S11–S14: единая платформенная карточка (4 шага + 4 кнопки).
+
+    Кнопки: Открыть и подключить (URL, через одноразовый /connect токен),
+    Скачать Happ (URL по платформе), Скопировать ссылку (CopyTextButton или
+    fallback callback при URL > 256 байт), ← Назад.
+    """
     device = callback.data.split(":", 1)[1]
     user = await ensure_user(callback, session)
     if not is_subscription_active(user) or not user.vpn_subscription_url:
@@ -474,11 +521,16 @@ async def device_callback(callback: CallbackQuery, session: AsyncSession) -> Non
     if user.connected_at is None:
         user.connected_at = utcnow()
     settings = get_settings()
+    token = await connect_tokens.issue_connect_token(session, user=user, settings=settings)
+    open_url = happ.public_connect_url(settings, token.token)
+    text = connection_texts.CARDS.get(device, connection_texts.CONNECT)
     await callback.message.edit_text(
-        connection_texts.CONNECT,
-        reply_markup=keyboards.device_connection_menu(
+        text,
+        reply_markup=keyboards.device_card_menu(
             device=device,
-            open_url=happ.connect_url(settings, user.telegram_id),
+            open_url=open_url,
+            download_url=_download_url_for(device, settings),
+            subscription_url=user.vpn_subscription_url,
         ),
     )
     await callback.answer()
@@ -486,20 +538,21 @@ async def device_callback(callback: CallbackQuery, session: AsyncSession) -> Non
 
 @router.callback_query(F.data.startswith("copy_link:"))
 async def copy_link_callback(callback: CallbackQuery, session: AsyncSession) -> None:
+    """Fallback for vpn_subscription_url > 256 bytes (Telegram CopyTextButton limit).
+
+    Sends the raw link as a separate <code>...</code> message so the user can
+    long-press to copy. Keeps the platform card intact.
+    """
     device = callback.data.split(":", 1)[1]
     user = await ensure_user(callback, session)
     if not user.vpn_subscription_url:
         await callback.answer("Ссылка пока недоступна", show_alert=True)
         return
-    await callback.message.edit_text(
-        connection_texts.copy_link(user.vpn_subscription_url),
-        reply_markup=keyboards.device_instruction_menu(
-            device=device,
-            url=user.vpn_subscription_url,
-            back_to=f"device:{device}",
-        ),
+    await callback.message.answer(
+        connection_texts.copy_link_message(user.vpn_subscription_url),
+        reply_markup=keyboards.back_menu(f"device:{device}"),
     )
-    await callback.answer()
+    await callback.answer("Ссылка отправлена")
 
 
 @router.callback_query(F.data.startswith("instruction:"))

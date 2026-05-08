@@ -19,6 +19,7 @@ from eboost.bot.keyboards.cabinet import cabinet_menu, cabinet_no_access_menu, p
 from eboost.bot.keyboards.common import back_menu
 from eboost.bot.keyboards.connection import (
     connect_action_menu,
+    device_card_menu,
     device_connection_menu,
     device_instruction_menu,
     device_menu,
@@ -43,6 +44,7 @@ __all__ = [
     "cabinet_menu",
     "cabinet_no_access_menu",
     "connect_action_menu",
+    "device_card_menu",
     "device_connection_menu",
     "device_instruction_menu",
     "device_menu",

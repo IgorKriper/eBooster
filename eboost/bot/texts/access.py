@@ -1,32 +1,28 @@
 def plans() -> str:
     return (
-        "<b>⚡ Доступ к eBooster</b>\n\n"
-        "Выбери тариф:\n\n"
-        "<b>1 месяц</b> - 200₽\n"
-        "<b>3 месяца</b> - 540₽\n"
-        "<b>12 месяцев</b> - 1900₽\n\n"
-        "Чем дольше срок — тем выгоднее подключение."
+        "<b>⚡ Тарифы</b>\n\n"
+        "Все тарифы — на 30 дней. Различаются только числом устройств.\n\n"
+        "⚡ <b>Solo</b> — 200₽ · 2 устройства\n"
+        "🚀 <b>Plus</b> — 349₽ · 5 устройств\n"
+        "👑 <b>Family</b> — 590₽ · 10 устройств\n\n"
+        "Выбери тариф ниже."
     )
 
 
 def device_packs(current_limit: int) -> str:
     return (
         "<b>➕ Добавить устройство</b>\n\n"
-        f"Текущий лимит: <b>{current_limit}</b> устройств.\n\n"
-        "Дополнительные устройства подключаются к твоей подписке навсегда — "
-        "доступ будет действовать до окончания срока подписки.\n\n"
-        "<b>Тарифы на устройства</b>\n"
-        "+1 устройство — 149₽\n"
-        "+2 устройства — 249₽\n"
-        "+3 устройства — 349₽"
+        f"Сейчас в подписке: <b>{current_limit}</b> устройств.\n\n"
+        "Доп. устройство добавится к текущей подписке "
+        "и будет действовать до её окончания."
     )
 
 
-def connect_panel(connect_url: str) -> str:
+def connect_panel(connect_url: str) -> str:  # noqa: ARG001 — URL отдаётся кнопкой
     return (
         "<b>🚀 Открыть и подключить</b>\n\n"
-        "Жми кнопку ниже — откроется eBooster в приложении Happ.\n"
-        "Если приложение Happ ещё не установлено, его можно скачать прямо со страницы."
+        "Нажми кнопку ниже — откроется eBooster в приложении Happ.\n"
+        "Если Happ ещё не установлен, его можно скачать прямо со страницы."
     )
 
 
@@ -36,20 +32,25 @@ CONNECT_NO_ACCESS = (
 )
 
 
-def selected_plan(title: str, price: int, duration_days: int) -> str:
-    if duration_days <= 31:
-        note = "Если планируешь пользоваться регулярно - выгоднее выбрать тариф на несколько месяцев."
-    elif duration_days <= 100:
-        note = "Хороший выбор: выгоднее, чем продлевать каждый месяц."
-    else:
-        note = "Отличный выбор: максимальная выгода и стабильный доступ."
-
+def selected_plan(title: str, price: int, duration_days: int, devices: int = 0) -> str:
+    period = "30 дней" if duration_days == 30 else f"{duration_days} дн."
+    devices_line = f"Устройств: <b>{devices}</b>\n" if devices else ""
     return (
         "<b>⚡ Тариф выбран</b>\n\n"
-        f"{title.replace('eBooster на ', 'eBooster на <b>')}</b>\n"
+        f"<b>{title}</b>\n"
+        f"Период: <b>{period}</b>\n"
+        f"{devices_line}"
         f"Стоимость: <b>{price}₽</b>\n\n"
-        f"{note}\n\n"
         "Промокод можно применить при первой оплате."
+    )
+
+
+def selected_device_pack(title: str, price: int, addon_devices: int, current_limit: int) -> str:
+    return (
+        "<b>➕ Доп. устройство</b>\n\n"
+        f"<b>{title}</b>\n"
+        f"Стоимость: <b>{price}₽</b>\n\n"
+        f"После оплаты в подписке будет: <b>{current_limit + max(addon_devices, 0)}</b> устройств."
     )
 
 
@@ -101,8 +102,14 @@ PAYMENT_SUCCESS = (
 )
 
 
-def active_until(date: str) -> str:
+def active_until(date: str, devices: int | None = None) -> str:
+    """S08 — мой доступ (активный).
+
+    Показывает дату окончания и лимит устройств, если известен.
+    """
+    devices_line = f"Лимит устройств: <b>{devices}</b>\n" if devices else ""
     return (
         "<b>✅ Доступ активен</b>\n\n"
-        f"До: <b>{date}</b>"
+        f"До: <b>{date}</b>\n"
+        f"{devices_line}"
     )

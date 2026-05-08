@@ -3,11 +3,24 @@ from __future__ import annotations
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from eboost.models import Payment, Plan
+from eboost.services.plans import TARIFF_EMOJIS
+
+
+def _plan_button_text(plan: Plan) -> str:
+    if plan.is_device_pack:
+        bonus = int(plan.bonus_devices or 0)
+        suffix = f" · +{bonus} уст." if bonus else ""
+        return f"➕ {plan.title} · {plan.price_rub}₽{suffix}"
+    emoji = TARIFF_EMOJIS.get(plan.slug, "⚡")
+    devices = int(plan.slot_devices or 0)
+    if devices:
+        return f"{emoji} {plan.title} · {plan.price_rub}₽ · {devices} уст."
+    return f"{emoji} {plan.title} · {plan.price_rub}₽"
 
 
 def plans_menu(plans: list[Plan], back_to: str = "main") -> InlineKeyboardMarkup:
     rows = [
-        [InlineKeyboardButton(text=f"{plan.title} - {plan.price_rub}₽", callback_data=f"plan:{plan.id}")]
+        [InlineKeyboardButton(text=_plan_button_text(plan), callback_data=f"plan:{plan.id}")]
         for plan in plans
     ]
     rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data=back_to)])
@@ -15,11 +28,13 @@ def plans_menu(plans: list[Plan], back_to: str = "main") -> InlineKeyboardMarkup
 
 
 def active_access_menu() -> InlineKeyboardMarkup:
+    """S08 — мой доступ (активный)."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="📲 Открыть подключение", callback_data="connect")],
-            [InlineKeyboardButton(text="💳 Продлить доступ", callback_data="access_extend")],
-            [InlineKeyboardButton(text="⬅️ Назад", callback_data="main")],
+            [InlineKeyboardButton(text="🚀 Открыть и подключить", callback_data="connect")],
+            [InlineKeyboardButton(text="➕ Добавить устройство", callback_data="device_pack")],
+            [InlineKeyboardButton(text="⚡ Продлить", callback_data="access_extend")],
+            [InlineKeyboardButton(text="⬅️ В меню", callback_data="main")],
         ]
     )
 

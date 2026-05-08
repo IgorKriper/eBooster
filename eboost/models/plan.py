@@ -28,7 +28,15 @@ class Plan(Base):
     bonus_devices: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"
     )
+    slot_devices: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
 
     @property
     def is_device_pack(self) -> bool:
         return self.kind == PLAN_KIND_DEVICE_PACK
+
+    @property
+    def device_limit_for_subscription(self) -> int:
+        """Total devices granted by a subscription plan (0 for device packs)."""
+        return int(self.slot_devices or 0)
