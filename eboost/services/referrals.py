@@ -77,7 +77,9 @@ async def list_referrer_stats(
             continue
 
         invited_ids = [u.id for u in invited_users]
-        trial_count = sum(1 for u in invited_users if u.trial_used)
+        # User has no boolean ``trial_used`` flag — присвоение trial фиксируется
+        # установкой ``trial_started_at`` в services.trials.activate_trial.
+        trial_count = sum(1 for u in invited_users if u.trial_started_at is not None)
 
         # Successful payments by all invited users for this referrer.
         payments_q = await session.execute(

@@ -47,9 +47,18 @@ async def get_token(session: AsyncSession, token_value: str) -> ConnectToken | N
 
 
 def is_token_active(token: ConnectToken, *, now: datetime | None = None) -> bool:
+    """Token is active iff it has not expired AND has not been consumed yet.
+
+    Consumed tokens (``used_at`` set) must NOT be reusable within the TTL —
+    that would leave the raw subscription URL exposed for the rest of the
+    window after a single click and undermine the whole one-shot model
+    described in the module docstring.
+    """
     moment = now or utcnow()
     expires_at = as_utc(token.expires_at)
     if not expires_at or expires_at < moment:
+        return False
+    if token.used_at is not None:
         return False
     return True
 

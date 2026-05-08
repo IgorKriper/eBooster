@@ -20,6 +20,7 @@ from eboost.core.branding import (
     BRAND_NAME,
     WELCOME_MESSAGE,
     WELCOME_MESSAGE_EXPIRED,
+    WELCOME_MESSAGE_WITH_ACTIVE_SUB,
 )
 from eboost.core.config import Settings, get_settings
 from eboost.models.payment import PaymentStatus
@@ -74,7 +75,7 @@ async def _connect_url_for(
 
 def _welcome_text_for(user) -> str:
     if is_subscription_active(user):
-        return WELCOME_MESSAGE
+        return WELCOME_MESSAGE_WITH_ACTIVE_SUB
     if user.subscription_until is not None:
         return WELCOME_MESSAGE_EXPIRED
     return WELCOME_MESSAGE
