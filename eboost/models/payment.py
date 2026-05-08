@@ -10,10 +10,14 @@ from eboost.models.common import TimestampMixin
 
 
 class PaymentStatus:
+    CREATED = "created"
     PENDING = "pending"
-    SUCCEEDED = "succeeded"
+    PAID = "paid"
+    SUCCEEDED = PAID
     FAILED = "failed"
-    CANCELED = "canceled"
+    CANCELLED = "cancelled"
+    CANCELED = CANCELLED
+    REFUNDED = "refunded"
 
 
 class Payment(TimestampMixin, Base):
@@ -25,6 +29,7 @@ class Payment(TimestampMixin, Base):
     promo_code_id: Mapped[int | None] = mapped_column(ForeignKey("promo_codes.id", ondelete="SET NULL"))
     provider: Mapped[str] = mapped_column(String(64), nullable=False)
     external_id: Mapped[str | None] = mapped_column(String(255), unique=True)
+    provider_payment_id: Mapped[str | None] = mapped_column(String(255), unique=True)
     status: Mapped[str] = mapped_column(String(32), default=PaymentStatus.PENDING, nullable=False)
     payment_url: Mapped[str | None] = mapped_column(Text)
     original_amount: Mapped[int] = mapped_column(Integer, nullable=False)

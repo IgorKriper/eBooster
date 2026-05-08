@@ -7,6 +7,7 @@ from eboost.core.time import utcnow
 from eboost.models import User
 from eboost.models.referral import ReferralBonusType
 from eboost.services import referrals, subscriptions
+from eboost.services import logs
 from eboost.services.vpn.base import VpnProvider
 
 
@@ -22,7 +23,13 @@ async def activate_trial(
 
     user.trial_started_at = utcnow()
     subscriptions.extend_subscription(user, settings.trial_days)
-    await subscriptions.sync_vpn_access(user, vpn_provider)
+    try:
+        await subscriptions.sync_vpn_access(user, vpn_provider)
+    except Exception as exc:
+        await logs.system_log(session, event="vpn_error", user_id=user.id, details={"error": str(exc)})
+        raise
+    await logs.system_log(session, event="trial_activated", user_id=user.id, details={"days": settings.trial_days})
+    await logs.system_log(session, event="vpn_access_created", user_id=user.id, details={"vpn_user_id": user.vpn_user_id})
     await referrals.award_referral_bonus(
         session,
         referred=user,

@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from eboost.models import User
+from eboost.services import logs
 
 
 async def get_user_by_telegram_id(session: AsyncSession, telegram_id: int) -> User | None:
@@ -55,4 +56,5 @@ async def get_or_create_user(
     )
     session.add(user)
     await session.flush()
+    await logs.system_log(session, event="user_registered", user_id=user.id, details={"telegram_id": telegram_id})
     return user

@@ -11,7 +11,7 @@ class MockVpnProvider(VpnProvider):
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
 
-    async def create_user(self, *, telegram_id: int, subscription_until: datetime | None) -> str:
+    async def create_user(self, *, telegram_id: int, subscription_until: datetime | None, device_limit: int = 5) -> str:
         return f"mock-vpn-{telegram_id}"
 
     async def extend_user(self, *, vpn_user_id: str, subscription_until: datetime | None) -> None:

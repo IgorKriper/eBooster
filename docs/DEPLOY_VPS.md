@@ -73,19 +73,55 @@ Health:
 curl https://api.example.com/health
 ```
 
-## 5. WATA Webhook
+## 5. Public IP Mode Without Domain
 
-In WATA dashboard set:
+For YooKassa without a domain, use HTTPS on the VPS IP with Caddy's internal certificate:
+
+```bash
+cp deploy/Caddyfile.ip-https deploy/Caddyfile
+```
+
+Set:
+
+```env
+CADDY_DOMAIN=
+SERVER_IP=YOUR_SERVER_IP
+BACKEND_PUBLIC_URL=https://YOUR_SERVER_IP
+```
+
+Restart Caddy:
+
+```bash
+docker compose -f docker-compose.prod.yml up -d caddy
+```
+
+Webhook URL:
 
 ```text
-https://api.example.com/api/payments/webhook/wata
+https://YOUR_SERVER_IP/api/payments/webhook/yookassa
+```
+
+## 6. YooKassa Webhook
+
+In YooKassa dashboard set:
+
+```text
+https://api.example.com/api/payments/webhook/yookassa
+```
+
+Or, in public IP mode:
+
+```text
+https://YOUR_SERVER_IP/api/payments/webhook/yookassa
 ```
 
 Then set:
 
 ```env
-PAYMENT_PROVIDER=wata
-WATA_ACCESS_TOKEN=
+PAYMENT_PROVIDER=yookassa
+YOOKASSA_SHOP_ID=
+YOOKASSA_SECRET_KEY=
+YOOKASSA_RETURN_URL=https://t.me/your_bot
 ```
 
 Restart:
@@ -94,7 +130,7 @@ Restart:
 docker compose -f docker-compose.prod.yml up -d
 ```
 
-## 6. Real VPN Provider
+## 7. Real VPN Provider
 
 Set:
 

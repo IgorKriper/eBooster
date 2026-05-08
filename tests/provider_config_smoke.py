@@ -2,16 +2,21 @@ from __future__ import annotations
 
 from eboost.core.config import Settings
 from eboost.services.payment.factory import get_payment_provider
-from eboost.services.payment.wata import WataPaymentProvider
+from eboost.services.payment.mock import MockPaymentProvider
+from eboost.services.payment.yookassa import YooKassaPaymentProvider
 from eboost.services.vpn.factory import get_vpn_provider
 from eboost.services.vpn.http import HttpVpnProvider
 
 
 def run() -> None:
-    payment_provider = get_payment_provider(Settings(payment_provider="wata", wata_access_token="test"))
+    mock_provider = get_payment_provider(Settings(payment_provider="mock"))
+    yookassa_provider = get_payment_provider(
+        Settings(payment_provider="yookassa", yookassa_shop_id="shop", yookassa_secret_key="secret")
+    )
     vpn_provider = get_vpn_provider(Settings(vpn_provider="http", http_vpn_base_url="https://vpn.example"))
 
-    assert isinstance(payment_provider, WataPaymentProvider)
+    assert isinstance(mock_provider, MockPaymentProvider)
+    assert isinstance(yookassa_provider, YooKassaPaymentProvider)
     assert isinstance(vpn_provider, HttpVpnProvider)
 
     nested = {"user": {"subscription": {"url": "https://sub.example"}}}

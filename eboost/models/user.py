@@ -20,6 +20,8 @@ class User(TimestampMixin, Base):
     referrer_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), index=True)
     trial_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     subscription_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    connected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    device_limit: Mapped[int] = mapped_column(Integer, default=5, server_default="5")
     vpn_user_id: Mapped[str | None] = mapped_column(String(255))
     vpn_subscription_url: Mapped[str | None] = mapped_column(Text)
     bonus_days: Mapped[int] = mapped_column(Integer, default=0, server_default="0")

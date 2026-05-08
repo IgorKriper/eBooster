@@ -14,15 +14,17 @@ class HttpVpnProvider(VpnProvider):
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
 
-    async def create_user(self, *, telegram_id: int, subscription_until: datetime | None) -> str:
+    async def create_user(self, *, telegram_id: int, subscription_until: datetime | None, device_limit: int = 5) -> str:
         payload = self._render_payload(
             self.settings.http_vpn_create_payload,
             default={
                 "telegram_id": telegram_id,
                 "subscription_until": self._iso(subscription_until),
+                "device_limit": device_limit,
             },
             telegram_id=telegram_id,
             subscription_until=self._iso(subscription_until),
+            device_limit=device_limit,
         )
         data = await self._request("POST", self.settings.http_vpn_create_path, json_payload=payload)
         user_id = self._get_field(data, self.settings.http_vpn_user_id_field)

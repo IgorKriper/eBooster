@@ -6,7 +6,7 @@ from datetime import datetime
 
 class VpnProvider(ABC):
     @abstractmethod
-    async def create_user(self, *, telegram_id: int, subscription_until: datetime | None) -> str:
+    async def create_user(self, *, telegram_id: int, subscription_until: datetime | None, device_limit: int = 5) -> str:
         raise NotImplementedError
 
     @abstractmethod
